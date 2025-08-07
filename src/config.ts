@@ -14,9 +14,9 @@ export const DB_PASS: string | undefined = process.env.DB_PASS;
 
 // LTI Configuration
 if (!process.env.LTI_KEY) throw 'LTI_KEY is not defined';
-if (!process.env.LTI_API_SECRET) throw 'LTI_API_SECRET is not defined';
+if (!process.env.LTI_SHARED_API_SECRET) throw 'LTI_SHARED_API_SECRET is not defined';
 export const LTI_KEY = process.env.LTI_KEY;
-export const LTI_API_SECRET = process.env.LTI_API_SECRET;
+export const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
 
 // Platform Configuration
 if (!process.env.PLATFORM_URL) throw 'PLATFORM_URL is not defined';

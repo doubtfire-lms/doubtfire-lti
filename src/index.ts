@@ -7,8 +7,8 @@ import {
   DB_NAME,
   DB_PASS,
   DB_USER,
-  LTI_API_SECRET,
   LTI_KEY,
+  LTI_SHARED_API_SECRET,
   PLATFORM_ACCESS_TOKEN_ENDPOINT,
   PLATFORM_AUTHCONFIG_KEY,
   PLATFORM_AUTHCONFIG_METHOD,
@@ -43,7 +43,6 @@ lti.setup(
 );
 
 // When receiving successful LTI launch redirects to app
-
 lti.onConnect((_token: IdToken, req: Request, res: Response) => {
   if (!_token) {
     console.error('Invalid token?');
@@ -77,11 +76,12 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     userInfo: token.userInfo,
     platformInfo: token.platformInfo,
     iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+    jti: crypto.randomUUID(),
   };
-  // TODO: set a short expiry on the jwt (a few seconds)
+
   // TODO: attach more information like user-agent and IP to this token
   // TODO: .. so that when user tries using it to log in to the api, it ensures IPs match
-
   // console.log(req.ip);
   // console.log(req.get('user-agent'));
 
@@ -117,7 +117,13 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     }
   });
 
-  const signedToken = jwt.sign(newToken, LTI_API_SECRET);
+  console.log(LTI_SHARED_API_SECRET);
+
+  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+
+  // TODO: we could actually hit our Ruby api first to request the one time AuthToken
+  // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
+  // Currently we redirect -> sign_in?ltiToken -> /api/auth/lti -> sign_in?authToken -> /api/auth/jwt -> authenticated
 
   // TODO: replace with env var
   res.redirect(`http://localhost:4200/sign_in?ltiToken=${signedToken}`);
@@ -128,14 +134,80 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
 const ltiRouter = express.Router();
 
 lti.app.use(express.urlencoded({ extended: true }));
+ltiRouter.use(express.urlencoded({ extended: true }));
+ltiRouter.use(express.json());
+lti.app.use(express.json());
 
-// TODO: OnTrack will post to this route with the unit to link to
+ltiRouter.get('/deeplink-redirect', (req, res) => {
+  // Redirects instructors to OnTrack's UI to select a unit to link to the LMS context.
+  res.redirect(`http://localhost:4200/lti/deeplink?ltik=${res.locals.ltik}`);
+});
+
+// Handles form submission from OnTrack's UI to link a unit to the LMS context.
+// Stores the deeplink mapping in MongoDB.
 ltiRouter.post('/deeplink', async (req: Request, res: Response) => {
-  if (!res.locals.token) {
-    return;
+  const _token = res.locals.token;
+  const token = _token as unknown as LtiLaunchPayload;
+  const resource = req.body;
+
+  if (!token || !_token) {
+    return res.sendStatus(403);
   }
+
+  if (!resource.unit_id) {
+    return res.sendStatus(400);
+  }
+
+  // TODO: helper function to resign LtiToken payload
+  // Re-sign new JWT with smaller payload
+  const newToken: LtiLaunchPayload = {
+    iss: token.iss,
+    user: token.user,
+    platformContext: {
+      roles: token.platformContext?.roles,
+      context: token.platformContext?.context,
+      endpoint: token.platformContext?.endpoint,
+    },
+    userInfo: token.userInfo,
+    platformInfo: token.platformInfo,
+    // Append our deeplink request data
+    deeplinkRequest: {
+      unit_id: resource.unit_id,
+    },
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+    jti: crypto.randomUUID(),
+  };
+
   try {
-    const resource = req.body;
+    const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+
+    // TODO: signedToken as a query param or an Authorization header?
+    const response = await fetch(`http://localhost:4200/api/lti/deeplink?ltik=${signedToken}`, {
+      method: 'GET',
+      headers: {
+        // Authorization: String(req.headers['authorization'] ?? ''), //
+        'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
+        Username: String(req.headers['username'] ?? ''),
+      },
+    });
+
+    const message = await response.json();
+
+    if (response.status !== 200) {
+      console.log(response);
+      console.log(message);
+
+      if (JSON.stringify(message) !== '{}') {
+        // Forward any error messages from Ruby API
+        return res.status(response.status).send(message);
+      } else {
+        return res.sendStatus(response.status);
+      }
+    }
+
+    console.log(response);
+    console.log(response.status);
 
     const items: ContentItem[] = [
       {
@@ -144,35 +216,24 @@ ltiRouter.post('/deeplink', async (req: Request, res: Response) => {
         custom: {
           unit_id: resource.unit_id,
           // other custom key/value pairs eg.
-          // otherValue: resource.otherValue,
+          // othqerValue: resource.otherValue,
           // anotherValue: resource.anotherValue,
         },
       },
     ];
 
-    const form = await lti.DeepLinking.createDeepLinkingForm(res.locals.token, items, {
+    // TODO: does this overwrite previously linked content?
+    const form = await lti.DeepLinking.createDeepLinkingForm(_token, items, {
       message: 'Successfully Registered',
     });
-    if (form) return res.send(form);
+
+    // Stringify the form becaus OnTrack will always attempt to parse responses as JSON (unless specified)
+    if (form) return res.send(JSON.stringify(form));
     return res.sendStatus(500);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return res.status(500).send(message);
   }
-});
-
-ltiRouter.get('/deeplink-redirect', (req, res) => {
-  // This route is used when Instructors click "Select Content"
-  // It redirects to a route within OnTrack that displays a form that Administrators can choose which unit to link to this unit.
-
-  // TODO: Do we trust administrators to self enrol them into *existing* units?
-  // TODO: Do we only let administrators/instructors linking units that they are already enrolled in within OnTrack?
-
-  // TODO: if Administrator is creating a *new* unit, self enrol them as a Convenor
-  // TODO: if the unit already exists, should it require the "lmsStaffCanSelfAssign" to be enabled?
-  // TODO: self enrol Instructors as tutors into the unit
-
-  res.redirect(`http://localhost:4200/lti/deeplink?ltik=${res.locals.ltik}`);
 });
 
 // ltiRouter.get('/info', async (_req: Request, res: Response) => {

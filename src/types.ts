@@ -1,3 +1,5 @@
+import { UUID } from 'crypto';
+
 export interface LtiLaunchPayload {
   iss?: string | undefined;
   user?: string | undefined;
@@ -73,5 +75,10 @@ export interface LtiLaunchPayload {
         createdAt?: string;
       }
     | undefined;
+  deeplinkRequest?: {
+    unit_id: string;
+  };
   iat?: number | undefined;
+  exp?: number | undefined;
+  jti: UUID;
 }
