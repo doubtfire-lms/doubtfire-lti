@@ -264,88 +264,6 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
   return res.send(gradesSynced);
 });
 
-// // Endpoint to set grade for single student
-// ltiRouter.post('/grade', async (req: Request, res: Response) => {
-//   const _token = res.locals.token;
-//   if (!_token) {
-//     return res.status(400).send({ error: 'Invalid Lti token' });
-//   }
-
-//   const token = _token as unknown as LtiLaunchPayload;
-//   const contextId = token.platformContext?.context?.id;
-
-//   const link = await UnitLink.findOne({ contextId });
-//   if (!link) {
-//     return res.status(404).send({ error: 'No unit is linked to this course' });
-//   }
-
-//   const newToken = {
-//     unit_id: link.unitId,
-//   };
-
-//   const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
-
-//   // TODO: signedToken as a query param or an Authorization header?
-//   const response = await fetch(`http://localhost:4200/api/lti/grade?ltik=${signedToken}`, {
-//     method: 'GET',
-//     headers: {
-//       // Authorization: String(req.headers['authorization'] ?? ''), //
-//       'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-//       Username: String(req.headers['username'] ?? ''),
-//     },
-//   });
-
-//   if (!response.ok) {
-//     const errorBody = await response.json().catch(() => ({}));
-//     return res.status(response.status).json(errorBody);
-//   }
-
-//   const data = (await response.json()) as number | null;
-//   if (data === null || isNaN(data)) {
-//     return res.status(404);
-//   }
-
-//   let lineItemId = token.platformContext?.endpoint?.lineitem;
-
-//   if (!lineItemId) {
-//     // @ts-expect-error Outdated ltis @types.
-//     const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
-//     const lineItems = response.lineItems;
-//     if (lineItems.length === 0) {
-//       // Creating line item if there is none
-//       const newLineItem = {
-//         scoreMaximum: 100,
-//         label: 'Grade',
-//         tag: 'grade',
-//         resourceLinkId: token.platformContext?.resource?.id,
-//         activityProgress: 'Completed',
-//         gradingProgress: 'FullyGraded',
-//       };
-//       // @ts-expect-error Outdated ltis @types.
-//       const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
-//       lineItemId = lineItem.id;
-//     } else lineItemId = lineItems[0].id;
-//   }
-
-//   const members = await lti.NamesAndRoles.getMembers(_token);
-//   if (!members) {
-//     return res.status(400);
-//   }
-
-//   const gradeObj = {
-//     userId: token.user,
-//     scoreGiven: data,
-//     scoreMaximum: 100,
-//     activityProgress: 'Completed',
-//     gradingProgress: 'FullyGraded',
-//   };
-//   // Sending Grade
-//   // @ts-expect-error Outdated ltis @types.
-//   const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
-
-//   return res.send(responseGrade);
-// });
-
 ltiRouter.get('/members', async (req: Request, res: Response) => {
   const token = res.locals.token;
   if (!token) {
@@ -383,11 +301,6 @@ ltiRouter.get('/members', async (req: Request, res: Response) => {
   //     }
   //   }
   // }
-});
-
-ltiRouter.get('/deeplink-redirect', (req, res) => {
-  // Redirects instructors to OnTrack's UI to select a unit to link to the LMS context.
-  res.redirect(`http://localhost:4200/lti/deeplink?ltik=${res.locals.ltik}`);
 });
 
 /*
@@ -543,99 +456,6 @@ ltiRouter.delete('/link', async (req: Request, res: Response) => {
   await UnitLink.deleteMany({ contextId });
   res.status(204).send();
 });
-
-// // Handles form submission from OnTrack's UI to link a unit to the LMS context.
-// // Stores the deeplink mapping in MongoDB.
-// ltiRouter.post('/deeplink', async (req: Request, res: Response) => {
-//   const _token = res.locals.token;
-//   const token = _token as unknown as LtiLaunchPayload;
-//   const resource = req.body;
-
-//   if (!token || !_token) {
-//     return res.sendStatus(403);
-//   }
-
-//   if (!resource.unit_id) {
-//     return res.sendStatus(400);
-//   }
-
-//   // TODO: helper function to resign LtiToken payload
-//   // Re-sign new JWT with smaller payload
-//   const newToken: LtiLaunchPayload = {
-//     iss: token.iss,
-//     user: token.user,
-//     platformContext: {
-//       roles: token.platformContext?.roles,
-//       context: token.platformContext?.context,
-//       endpoint: token.platformContext?.endpoint,
-//     },
-//     userInfo: token.userInfo,
-//     platformInfo: token.platformInfo,
-//     // Append our deeplink request data
-//     deeplinkRequest: {
-//       unit_id: resource.unit_id,
-//     },
-//     iat: Math.floor(Date.now() / 1000),
-//     exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
-//     jti: crypto.randomUUID(),
-//   };
-
-//   try {
-//     const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
-
-//     // TODO: signedToken as a query param or an Authorization header?
-//     const response = await fetch(`http://localhost:4200/api/lti/deeplink?ltik=${signedToken}`, {
-//       method: 'GET',
-//       headers: {
-//         // Authorization: String(req.headers['authorization'] ?? ''), //
-//         'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-//         Username: String(req.headers['username'] ?? ''),
-//       },
-//     });
-
-//     const message = await response.json();
-
-//     if (response.status !== 200) {
-//       console.log(response);
-//       console.log(message);
-
-//       if (JSON.stringify(message) !== '{}') {
-//         // Forward any error messages from Ruby API
-//         return res.status(response.status).send(message);
-//       } else {
-//         return res.sendStatus(response.status);
-//       }
-//     }
-
-//     console.log(response);
-//     console.log(response.status);
-
-//     const items: ContentItem[] = [
-//       {
-//         type: 'ltiResourceLink',
-//         title: 'Ltijs Demo',
-//         custom: {
-//           unit_id: resource.unit_id,
-//           // other custom key/value pairs eg.
-//           // othqerValue: resource.otherValue,
-//           // anotherValue: resource.anotherValue,
-//         },
-//       },
-//     ];
-
-//     // TODO: does this overwrite previously linked content?
-//     const form = await lti.DeepLinking.createDeepLinkingForm(res.locals.token!, items, {
-//       message: 'Successfully Registered',
-//     });
-
-//     // Stringify the form becaus OnTrack will always attempt to parse responses as JSON (unless specified)
-//     if (form) return res.send(JSON.stringify(form));
-//     return res.sendStatus(500);
-//   } catch (err: unknown) {
-//     const message = err instanceof Error ? err.message : 'Unknown error';
-//     return res.status(500).send(message);
-//   }
-// });
 
 ltiRouter.get('/info', async (_req: Request, res: Response) => {
   const _token = res.locals.token;
