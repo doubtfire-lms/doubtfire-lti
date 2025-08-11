@@ -208,10 +208,26 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
     ignored: [],
   };
   for (const user of members.members) {
-    if (!data[user.email]) {
+    if (data[user.email] === null || data[user.email] === undefined) {
       gradesSynced.ignored.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'No grade found',
+        message: 'Project not found',
+      });
+      continue;
+    }
+
+    if (data[user.email] === -1) {
+      gradesSynced.errors.push({
+        row: JSON.stringify(user).replaceAll('\\', ''),
+        message: 'No permission to retrieve grade',
+      });
+      continue;
+    }
+
+    if (data[user.email] === 0) {
+      gradesSynced.ignored.push({
+        row: JSON.stringify(user).replaceAll('\\', ''),
+        message: 'No grades found',
       });
       continue;
     }
@@ -231,7 +247,7 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
       if (responseGrade) {
         gradesSynced.success.push({
           row: JSON.stringify(user).replaceAll('\\', ''),
-          message: `Grade synced: ${data[user.email]}`,
+          message: `Grade synced: ${data[user.email]}%`,
         });
       }
     } catch (e) {
