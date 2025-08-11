@@ -156,14 +156,16 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
 
   const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
 
-  // TODO: signedToken as a query param or an Authorization header?
-  const response = await fetch(`http://localhost:4200/api/lti/grades?ltik=${signedToken}`, {
-    method: 'GET',
+  const response = await fetch(`http://localhost:4200/api/lti/grades`, {
+    method: 'POST',
     headers: {
-      // Authorization: String(req.headers['authorization'] ?? ''), //
+      'Content-Type': 'application/json',
       'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
       Username: String(req.headers['username'] ?? ''),
     },
+    body: JSON.stringify({
+      ltik: signedToken,
+    }),
   });
 
   if (!response.ok) {
@@ -262,87 +264,87 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
   return res.send(gradesSynced);
 });
 
-// Endpoint to set grade for single student
-ltiRouter.post('/grade', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
-    return res.status(400).send({ error: 'Invalid Lti token' });
-  }
+// // Endpoint to set grade for single student
+// ltiRouter.post('/grade', async (req: Request, res: Response) => {
+//   const _token = res.locals.token;
+//   if (!_token) {
+//     return res.status(400).send({ error: 'Invalid Lti token' });
+//   }
 
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+//   const token = _token as unknown as LtiLaunchPayload;
+//   const contextId = token.platformContext?.context?.id;
 
-  const link = await UnitLink.findOne({ contextId });
-  if (!link) {
-    return res.status(404).send({ error: 'No unit is linked to this course' });
-  }
+//   const link = await UnitLink.findOne({ contextId });
+//   if (!link) {
+//     return res.status(404).send({ error: 'No unit is linked to this course' });
+//   }
 
-  const newToken = {
-    unit_id: link.unitId,
-  };
+//   const newToken = {
+//     unit_id: link.unitId,
+//   };
 
-  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+//   const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
 
-  // TODO: signedToken as a query param or an Authorization header?
-  const response = await fetch(`http://localhost:4200/api/lti/grade?ltik=${signedToken}`, {
-    method: 'GET',
-    headers: {
-      // Authorization: String(req.headers['authorization'] ?? ''), //
-      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-      Username: String(req.headers['username'] ?? ''),
-    },
-  });
+//   // TODO: signedToken as a query param or an Authorization header?
+//   const response = await fetch(`http://localhost:4200/api/lti/grade?ltik=${signedToken}`, {
+//     method: 'GET',
+//     headers: {
+//       // Authorization: String(req.headers['authorization'] ?? ''), //
+//       'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
+//       Username: String(req.headers['username'] ?? ''),
+//     },
+//   });
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
-  }
+//   if (!response.ok) {
+//     const errorBody = await response.json().catch(() => ({}));
+//     return res.status(response.status).json(errorBody);
+//   }
 
-  const data = (await response.json()) as number | null;
-  if (data === null || isNaN(data)) {
-    return res.status(404);
-  }
+//   const data = (await response.json()) as number | null;
+//   if (data === null || isNaN(data)) {
+//     return res.status(404);
+//   }
 
-  let lineItemId = token.platformContext?.endpoint?.lineitem;
+//   let lineItemId = token.platformContext?.endpoint?.lineitem;
 
-  if (!lineItemId) {
-    // @ts-expect-error Outdated ltis @types.
-    const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
-    const lineItems = response.lineItems;
-    if (lineItems.length === 0) {
-      // Creating line item if there is none
-      const newLineItem = {
-        scoreMaximum: 100,
-        label: 'Grade',
-        tag: 'grade',
-        resourceLinkId: token.platformContext?.resource?.id,
-        activityProgress: 'Completed',
-        gradingProgress: 'FullyGraded',
-      };
-      // @ts-expect-error Outdated ltis @types.
-      const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
-      lineItemId = lineItem.id;
-    } else lineItemId = lineItems[0].id;
-  }
+//   if (!lineItemId) {
+//     // @ts-expect-error Outdated ltis @types.
+//     const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
+//     const lineItems = response.lineItems;
+//     if (lineItems.length === 0) {
+//       // Creating line item if there is none
+//       const newLineItem = {
+//         scoreMaximum: 100,
+//         label: 'Grade',
+//         tag: 'grade',
+//         resourceLinkId: token.platformContext?.resource?.id,
+//         activityProgress: 'Completed',
+//         gradingProgress: 'FullyGraded',
+//       };
+//       // @ts-expect-error Outdated ltis @types.
+//       const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
+//       lineItemId = lineItem.id;
+//     } else lineItemId = lineItems[0].id;
+//   }
 
-  const members = await lti.NamesAndRoles.getMembers(_token);
-  if (!members) {
-    return res.status(400);
-  }
+//   const members = await lti.NamesAndRoles.getMembers(_token);
+//   if (!members) {
+//     return res.status(400);
+//   }
 
-  const gradeObj = {
-    userId: token.user,
-    scoreGiven: data,
-    scoreMaximum: 100,
-    activityProgress: 'Completed',
-    gradingProgress: 'FullyGraded',
-  };
-  // Sending Grade
-  // @ts-expect-error Outdated ltis @types.
-  const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
+//   const gradeObj = {
+//     userId: token.user,
+//     scoreGiven: data,
+//     scoreMaximum: 100,
+//     activityProgress: 'Completed',
+//     gradingProgress: 'FullyGraded',
+//   };
+//   // Sending Grade
+//   // @ts-expect-error Outdated ltis @types.
+//   const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
 
-  return res.send(responseGrade);
-});
+//   return res.send(responseGrade);
+// });
 
 ltiRouter.get('/members', async (req: Request, res: Response) => {
   const token = res.locals.token;
@@ -424,9 +426,6 @@ ltiRouter.post('/link', async (req: Request, res: Response) => {
   //   },
   // });
 
-  // TODO: i think we should only link contextId <-> unitId
-  // TODO: and then we fetch the unit details on every launch
-  // TODO: (ensures our unit code, name is accurate every time)
   const result = await UnitLink.findOneAndUpdate(
     { contextId },
     { unitId },
@@ -437,6 +436,58 @@ ltiRouter.post('/link', async (req: Request, res: Response) => {
 
 /*
  * Enrols an LMS user into the linked OnTrack Unit
+ */
+ltiRouter.post('/enrolments', async (req: Request, res: Response) => {
+  const _token = res.locals.token;
+  const token = _token as unknown as LtiLaunchPayload;
+  const contextId = token.platformContext?.context?.id;
+
+  // Has our context been linked to an OnTrack unit?
+  const link = await UnitLink.findOne({ contextId });
+  if (!link) {
+    return res.status(404).json({ error: 'Unit link not found' });
+  }
+
+  if (!_token) {
+    return res.status(400);
+  }
+
+  const members = await lti.NamesAndRoles.getMembers(_token);
+  if (!members) {
+    return res.status(400);
+  }
+
+  const newToken = {
+    unit_id: link?.unitId,
+    members: members.members,
+  };
+
+  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+
+  const response = await fetch(`http://localhost:4200/api/lti/enrol/bulk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
+      Username: String(req.headers['username'] ?? ''),
+    },
+    body: JSON.stringify({
+      ltik: signedToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    return res.status(response.status).json(errorBody);
+  }
+
+  const data = await response.json();
+
+  res.json(data);
+});
+
+/*
+ * Enrols a list of LMS users into the linked OnTrack Unit
  */
 ltiRouter.post('/enrol', async (req: Request, res: Response) => {
   const _token = res.locals.token;
@@ -453,18 +504,22 @@ ltiRouter.post('/enrol', async (req: Request, res: Response) => {
 
   const newToken = {
     unit_id: link?.unitId,
+    user: token.userInfo,
+    roles: token.platformContext?.roles,
   };
 
   const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
 
-  // TODO: signedToken as a query param or an Authorization header?
-  const response = await fetch(`http://localhost:4200/api/lti/enrol?ltik=${signedToken}`, {
+  const response = await fetch(`http://localhost:4200/api/lti/enrol`, {
     method: 'POST',
     headers: {
-      // Authorization: String(req.headers['authorization'] ?? ''), //
+      'Content-Type': 'application/json',
       'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
       Username: String(req.headers['username'] ?? ''),
     },
+    body: JSON.stringify({
+      ltik: signedToken,
+    }),
   });
 
   if (!response.ok) {
