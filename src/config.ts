@@ -20,6 +20,9 @@ if (!process.env.LTI_SHARED_API_SECRET) throw 'LTI_SHARED_API_SECRET is not defi
 const LTI_KEY = process.env.LTI_KEY;
 const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
 
+const LTI_COOKIES_SECURE = Boolean(process.env.LTI_COOKIES_SECURE ?? false);
+const LTI_COOKIES_SAMESITE = process.env.LTI_COOKIES_SAMESITE ?? '';
+
 // Platform Configuration
 if (!process.env.PLATFORM_URL) throw 'PLATFORM_URL is not defined';
 if (!process.env.PLATFORM_NAME) throw 'PLATFORM_NAME is not defined';
@@ -50,6 +53,8 @@ export const Config = {
 
   LTI_KEY,
   LTI_SHARED_API_SECRET,
+  LTI_COOKIES_SECURE,
+  LTI_COOKIES_SAMESITE,
 
   PLATFORM_URL,
   PLATFORM_NAME,
@@ -58,4 +63,6 @@ export const Config = {
   PLATFORM_ACCESS_TOKEN_ENDPOINT,
   PLATFORM_AUTHCONFIG_METHOD,
   PLATFORM_AUTHCONFIG_KEY,
+
+  IS_PRODUCTION: process.env.NODE_ENV === 'production',
 };

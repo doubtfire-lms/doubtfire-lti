@@ -22,13 +22,13 @@ lti.setup(
     keysetUrl: '/lti/api/keys',
     cookies: {
       // Set secure to true if the testing platform is in a different domain and https is being used
-      secure: false,
+      secure: Config.LTI_COOKIES_SECURE,
       // Set sameSite to 'None' if the testing platform is in a different domain and https is being used
-      sameSite: '',
+      sameSite: Config.LTI_COOKIES_SAMESITE,
     },
     // @ts-expect-error Type is not defined.
     // Set DevMode to true if the testing platform is in a different domain and https is not being used
-    devMode: true,
+    devMode: !Config.IS_PRODUCTION,
   },
 );
 
