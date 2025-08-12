@@ -88,7 +88,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
       .then((data) => {
         const auth = data as AuthResponse;
         res.redirect(
-          `${Config.HOST}/sign_in?ltik=${_token}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
+          `${Config.HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
         );
       })
       .catch(() => {
