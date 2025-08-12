@@ -413,12 +413,16 @@ ltiRouter.post('/enrol', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Unit link not found' });
   }
 
+  const members = await lti.NamesAndRoles.getMembers(_token!);
+  if (!members) {
+    return res.status(404).json({ error: 'Could not retrieve member information' });
+  }
+  const member = members.members.find((m) => m.user_id === token.user);
   // TODO: check the roles of this incoming token
 
   const newToken = {
     unit_id: link?.unitId,
-    user: token.userInfo,
-    roles: token.platformContext?.roles,
+    member: member,
   };
 
   const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
@@ -457,44 +461,44 @@ ltiRouter.delete('/link', async (req: Request, res: Response) => {
   res.status(204).send();
 });
 
-ltiRouter.get('/info', async (_req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+// ltiRouter.get('/info', async (_req: Request, res: Response) => {
+//   const _token = res.locals.token;
+//   const token = _token as unknown as LtiLaunchPayload;
 
-  console.log(token);
-  console.log(res.locals.context);
-  // const context = res.locals.context;
-  const context = token.platformContext;
+//   console.log(token);
+//   console.log(res.locals.context);
+//   // const context = res.locals.context;
+//   const context = token.platformContext;
 
-  if (!token || !context) {
-    return res.status(400);
-  }
+//   if (!token || !context) {
+//     return res.status(400);
+//   }
 
-  const info: {
-    name?: string;
-    email?: string;
-    roles?: string[];
-    custom?: any;
-    context?:
-      | {
-          id?: string;
-          label?: string;
-          title?: string;
-          type?: string[];
-        }
-      | undefined;
-  } = {};
-  if (token.userInfo) {
-    if (token.userInfo.name) info.name = token.userInfo.name;
-    if (token.userInfo.email) info.email = token.userInfo.email;
-  }
+//   const info: {
+//     name?: string;
+//     email?: string;
+//     roles?: string[];
+//     custom?: any;
+//     context?:
+//       | {
+//           id?: string;
+//           label?: string;
+//           title?: string;
+//           type?: string[];
+//         }
+//       | undefined;
+//   } = {};
+//   if (token.userInfo) {
+//     if (token.userInfo.name) info.name = token.userInfo.name;
+//     if (token.userInfo.email) info.email = token.userInfo.email;
+//   }
 
-  if (context.roles) info.roles = context.roles;
-  if (context.context) info.context = context.context;
-  if (context.custom) info.custom = context.custom;
+//   if (context.roles) info.roles = context.roles;
+//   if (context.context) info.context = context.context;
+//   if (context.custom) info.custom = context.custom;
 
-  return res.send(info);
-});
+//   return res.send(info);
+// });
 
 const setup = async () => {
   try {
