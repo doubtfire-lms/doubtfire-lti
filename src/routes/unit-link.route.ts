@@ -1,4 +1,6 @@
 import express, { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { Config } from '../config';
 import UnitLink from '../schema/unitLink.model';
 import { LtiLaunchPayload } from '../types';
 
@@ -26,20 +28,30 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
   const token = _token as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
-  // TODO: validate request with our ruby API first
+  const newToken = {
+    unit_id: unitId,
+  };
 
-  // const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  // // TODO: signedToken as a query param or an Authorization header?
-  // const response = await fetch(`http://localhost:4200/api/lti/deeplink?ltik=${signedToken}`, {
-  //   method: 'GET',
-  //   headers: {
-  //     // Authorization: String(req.headers['authorization'] ?? ''), //
-  //     'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-  //     Username: String(req.headers['username'] ?? ''),
-  //   },
-  // });
+  const response = await fetch(`${Config.HOST}/api/lti/link`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
+      Username: String(req.headers['username'] ?? ''),
+    },
+    body: JSON.stringify({
+      ltik: signedToken,
+    }),
+  });
 
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    return res.status(response.status).json(errorBody);
+  }
+
+  // Current OnTrack user has permissions to enrol students into requested unit_id
   const result = await UnitLink.findOneAndUpdate(
     { contextId },
     { unitId },

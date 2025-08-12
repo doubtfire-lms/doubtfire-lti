@@ -37,7 +37,7 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  const response = await fetch(`http://localhost:4200/api/lti/enrol/bulk`, {
+  const response = await fetch(`${Config.HOST}/api/lti/enrol/bulk`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -89,7 +89,7 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  const response = await fetch(`http://localhost:4200/api/lti/enrol`, {
+  const response = await fetch(`${Config.HOST}/api/lti/enrol`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

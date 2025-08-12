@@ -74,8 +74,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
     // Currently we redirect -> sign_in?ltiToken -> /api/auth/lti -> sign_in?authToken -> /api/auth/jwt -> authenticated
 
-    // TODO: replace with env var
-    res.redirect(`http://localhost:4200/sign_in?ltik=${originalToken}&ltiToken=${signedToken}`);
+    res.redirect(`${Config.HOST}/sign_in?ltik=${originalToken}&ltiToken=${signedToken}`);
   });
 });
 

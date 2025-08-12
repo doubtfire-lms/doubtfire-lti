@@ -36,7 +36,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  const response = await fetch(`http://localhost:4200/api/lti/grades`, {
+  const response = await fetch(`${Config.HOST}/api/lti/grades`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
