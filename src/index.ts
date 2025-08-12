@@ -9,6 +9,11 @@ import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
 import { LtiLaunchPayload } from './types';
 
+interface AuthResponse {
+  username: string;
+  auth_token: string;
+}
+
 lti.setup(
   Config.LTI_KEY,
   {
@@ -67,14 +72,28 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     };
     const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-    // Ensure we pass on our ltik (token)
-    const originalToken = res.locals.ltik;
-
-    // TODO: we could actually hit our Ruby api first to request the one time AuthToken
-    // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
-    // Currently we redirect -> sign_in?ltiToken -> /api/auth/lti -> sign_in?authToken -> /api/auth/jwt -> authenticated
-
-    res.redirect(`${Config.HOST}/sign_in?ltik=${originalToken}&ltiToken=${signedToken}`);
+    // Create user and generate one-time auth token for the user to sign in with
+    fetch(`${Config.HOST}/api/auth/lti`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ltik: signedToken,
+      }),
+    })
+      .then((response) => {
+        return response.json();
+      })
+      .then((data) => {
+        const auth = data as AuthResponse;
+        res.redirect(
+          `${Config.HOST}/sign_in?ltik=${_token}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
+        );
+      })
+      .catch(() => {
+        res.redirect(`${Config.HOST}/timeout`);
+      });
   });
 });
 
