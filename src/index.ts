@@ -39,12 +39,6 @@ lti.setup(
 
 // When receiving successful LTI launch redirects to app
 lti.onConnect((_token: IdToken, req: Request, res: Response) => {
-  if (!_token) {
-    console.error('Invalid token?');
-    // TODO: if JWT expires.. redirect to /unauthenticated? Inform user to refresh the page?
-    // TODO: use lti.invalidTokenUrl
-  }
-
   const token = _token as unknown as LtiLaunchPayload;
 
   const context = token.platformContext?.context;
