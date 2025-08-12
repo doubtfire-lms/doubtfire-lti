@@ -2,30 +2,16 @@ import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { IdToken, RetrievedGrade, Provider as lti } from 'ltijs';
 import mongoose from 'mongoose';
-import {
-  DB_HOST,
-  DB_NAME,
-  DB_PASS,
-  DB_USER,
-  LTI_KEY,
-  LTI_SHARED_API_SECRET,
-  PLATFORM_ACCESS_TOKEN_ENDPOINT,
-  PLATFORM_AUTHCONFIG_KEY,
-  PLATFORM_AUTHCONFIG_METHOD,
-  PLATFORM_AUTHENTICATION_ENDPOINT,
-  PLATFORM_CLIENT_ID,
-  PLATFORM_NAME,
-  PLATFORM_URL,
-  PORT,
-} from './config';
+import { Config } from './config';
 import UnitLink from './schema/unitLink.model';
 import { LtiLaunchPayload } from './types';
 
 lti.setup(
-  LTI_KEY,
+  Config.LTI_KEY,
   {
-    url: `mongodb://${DB_HOST}/${DB_NAME}?authSource=admin`,
-    connection: DB_USER && DB_PASS ? { user: DB_USER, pass: DB_PASS } : undefined,
+    url: `mongodb://${Config.DB_HOST}/${Config.DB_NAME}?authSource=admin`,
+    connection:
+      Config.DB_USER && Config.DB_PASS ? { user: Config.DB_USER, pass: Config.DB_PASS } : undefined,
   },
   {
     appUrl: '/lti/api/',
@@ -83,7 +69,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
   // console.log(req.ip);
   // console.log(req.get('user-agent'));
 
-  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
   // TODO: we could actually hit our Ruby api first to request the one time AuthToken
   // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
@@ -154,7 +140,7 @@ ltiRouter.post('/grades', async (req: Request, res: Response) => {
     student_emails: [...members.members.map((m) => m.email)],
   };
 
-  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
   const response = await fetch(`http://localhost:4200/api/lti/grades`, {
     method: 'POST',
@@ -375,7 +361,7 @@ ltiRouter.post('/enrolments', async (req: Request, res: Response) => {
     members: members.members,
   };
 
-  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
   const response = await fetch(`http://localhost:4200/api/lti/enrol/bulk`, {
     method: 'POST',
@@ -425,7 +411,7 @@ ltiRouter.post('/enrol', async (req: Request, res: Response) => {
     member: member,
   };
 
-  const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
   const response = await fetch(`http://localhost:4200/api/lti/enrol`, {
     method: 'POST',
@@ -503,25 +489,25 @@ ltiRouter.delete('/link', async (req: Request, res: Response) => {
 const setup = async () => {
   try {
     await mongoose.connect(
-      `mongodb://${DB_HOST}/${DB_NAME}?authSource=admin`,
-      DB_USER && DB_PASS ? { user: DB_USER, pass: DB_PASS } : undefined,
+      `mongodb://${Config.DB_HOST}/${Config.DB_NAME}?authSource=admin`,
+      Config.DB_USER && Config.DB_PASS ? { user: Config.DB_USER, pass: Config.DB_PASS } : undefined,
     );
     console.log('MondoDB connected');
   } catch (error) {
     console.error(`MongoDB Connection Failed: ${error}`);
   }
 
-  await lti.deploy({ port: Number(PORT) });
+  await lti.deploy({ port: Number(Config.PORT) });
 
   await lti.registerPlatform({
-    url: PLATFORM_URL,
-    name: PLATFORM_NAME,
-    clientId: PLATFORM_CLIENT_ID,
-    authenticationEndpoint: PLATFORM_AUTHENTICATION_ENDPOINT,
-    accesstokenEndpoint: PLATFORM_ACCESS_TOKEN_ENDPOINT,
+    url: Config.PLATFORM_URL,
+    name: Config.PLATFORM_NAME,
+    clientId: Config.PLATFORM_CLIENT_ID,
+    authenticationEndpoint: Config.PLATFORM_AUTHENTICATION_ENDPOINT,
+    accesstokenEndpoint: Config.PLATFORM_ACCESS_TOKEN_ENDPOINT,
     authConfig: {
-      method: PLATFORM_AUTHCONFIG_METHOD,
-      key: PLATFORM_AUTHCONFIG_KEY,
+      method: Config.PLATFORM_AUTHCONFIG_METHOD,
+      key: Config.PLATFORM_AUTHCONFIG_KEY,
     },
   });
 };
