@@ -1,9 +1,12 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { IdToken, RetrievedGrade, Provider as lti } from 'ltijs';
+import { IdToken, Provider as lti } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
-import UnitLink from './schema/unitLink.model';
+import { EnrolmentRouter } from './routes/enrolment.route';
+import { GradeRouter } from './routes/grade.route';
+import { MemberRoute } from './routes/member.route';
+import { UnitLinkRouter } from './routes/unit-link.route';
 import { LtiLaunchPayload } from './types';
 
 lti.setup(
@@ -45,43 +48,35 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     console.log(context.type);
   }
 
-  const roles = token.platformContext?.roles;
-  console.log(roles);
+  lti.NamesAndRoles.getMembers(_token!).then((members) => {
+    if (!members) {
+      return res.status(404).json({ error: 'Could not retrieve member information' });
+    }
+    const member = members.members.find((m) => m.user_id === token.user);
 
-  // Re-sign new JWT with smaller payload
-  const newToken: LtiLaunchPayload = {
-    iss: token.iss,
-    user: token.user,
-    platformContext: {
-      roles: token.platformContext?.roles,
-      context: token.platformContext?.context,
-      endpoint: token.platformContext?.endpoint,
-    },
-    userInfo: token.userInfo,
-    platformInfo: token.platformInfo,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
-    jti: crypto.randomUUID(),
-  };
+    // TODO: attach more information like user-agent and IP to this token
+    // TODO: .. so that when user tries using it to log in to the api, it ensures IPs match
+    // console.log(req.ip);
+    // console.log(req.get('user-agent'));
 
-  // TODO: attach more information like user-agent and IP to this token
-  // TODO: .. so that when user tries using it to log in to the api, it ensures IPs match
-  // console.log(req.ip);
-  // console.log(req.get('user-agent'));
+    const newToken = {
+      member: member,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+      jti: crypto.randomUUID(),
+    };
+    const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
+    // Ensure we pass on our ltik (token)
+    const originalToken = res.locals.ltik;
 
-  // TODO: we could actually hit our Ruby api first to request the one time AuthToken
-  // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
-  // Currently we redirect -> sign_in?ltiToken -> /api/auth/lti -> sign_in?authToken -> /api/auth/jwt -> authenticated
+    // TODO: we could actually hit our Ruby api first to request the one time AuthToken
+    // TODO: then our redirect could be localhost/sign_in?authToken=xxxxx&username=yyyyy
+    // Currently we redirect -> sign_in?ltiToken -> /api/auth/lti -> sign_in?authToken -> /api/auth/jwt -> authenticated
 
-  const originalToken = res.locals.ltik;
-  // TODO: very important that we don't lose the originalToken, we need this when making requests back to /info
-  // TODO: but now our signed token can be much more minimal
-  console.log(originalToken);
-
-  // TODO: replace with env var
-  res.redirect(`http://localhost:4200/sign_in?ltik=${originalToken}&ltiToken=${signedToken}`);
+    // TODO: replace with env var
+    res.redirect(`http://localhost:4200/sign_in?ltik=${originalToken}&ltiToken=${signedToken}`);
+  });
 });
 
 // app.set('trust proxy', true);
@@ -92,399 +87,6 @@ lti.app.use(express.urlencoded({ extended: true }));
 ltiRouter.use(express.urlencoded({ extended: true }));
 ltiRouter.use(express.json());
 lti.app.use(express.json());
-
-// Endpoint to retrieve grade for a student within current context (course)
-ltiRouter.get('/grade', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
-    return res.status(403);
-  }
-
-  const token = _token as unknown as LtiLaunchPayload;
-
-  const response = await lti.Grade.result(_token);
-  if (!response) {
-    return res.status(404);
-  }
-
-  // @ts-expect-error Outdated ltis @types.
-  const result = response[0]?.results
-    //
-    .find((r: RetrievedGrade) => r.userId === token.user);
-
-  res.json(result);
-});
-
-// Endpoint to submit grades for multiple students
-ltiRouter.post('/grades', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
-    return res.status(400).send({ error: 'Invalid Lti token' });
-  }
-
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-
-  const link = await UnitLink.findOne({ contextId });
-  if (!link) {
-    return res.status(404).send({ error: 'No unit is linked to this course' });
-  }
-
-  const members = await lti.NamesAndRoles.getMembers(_token);
-  if (!members) {
-    return res.status(400);
-  }
-
-  const newToken = {
-    unit_id: link.unitId,
-    student_emails: [...members.members.map((m) => m.email)],
-  };
-
-  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
-
-  const response = await fetch(`http://localhost:4200/api/lti/grades`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-      Username: String(req.headers['username'] ?? ''),
-    },
-    body: JSON.stringify({
-      ltik: signedToken,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
-  }
-
-  const data = (await response.json()) as Record<string, number> | null;
-  if (data === null) {
-    return res.status(404);
-  }
-
-  let lineItemId = token.platformContext?.endpoint?.lineitem; // Attempting to retrieve it from idtoken
-
-  if (!lineItemId) {
-    // @ts-expect-error Outdated ltis @types.
-    const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
-    const lineItems = response.lineItems;
-    if (lineItems.length === 0) {
-      // Creating line item if there is none
-      const newLineItem = {
-        scoreMaximum: 100,
-        label: 'Grade',
-        tag: 'grade',
-        resourceLinkId: token.platformContext?.resource?.id,
-        activityProgress: 'Completed',
-        gradingProgress: 'FullyGraded',
-      };
-      // @ts-expect-error Outdated ltis @types.
-      const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
-      lineItemId = lineItem.id;
-    } else lineItemId = lineItems[0].id;
-  }
-
-  const gradesSynced: {
-    success: { row: string; message: string }[];
-    errors: { row: string; message: string }[];
-    ignored: { row: string; message: string }[];
-  } = {
-    success: [],
-    errors: [],
-    ignored: [],
-  };
-  for (const user of members.members) {
-    if (data[user.email] === null || data[user.email] === undefined) {
-      gradesSynced.ignored.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'Project not found',
-      });
-      continue;
-    }
-
-    if (data[user.email] === -1) {
-      gradesSynced.errors.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'No permission to retrieve grade',
-      });
-      continue;
-    }
-
-    if (data[user.email] === 0) {
-      gradesSynced.ignored.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'No grades found',
-      });
-      continue;
-    }
-
-    try {
-      const gradeObj = {
-        // userId: token.user,
-        userId: user.user_id,
-        scoreGiven: data[user.email],
-        scoreMaximum: 100,
-        activityProgress: 'Completed',
-        gradingProgress: 'FullyGraded',
-      };
-      // Sending Grade
-      // @ts-expect-error Outdated ltis @types.
-      const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
-      if (responseGrade) {
-        gradesSynced.success.push({
-          row: JSON.stringify(user).replaceAll('\\', ''),
-          message: `Grade synced: ${data[user.email]}%`,
-        });
-      }
-    } catch (e) {
-      console.error(`Unable to submit scores for ${user.name}`, e);
-      gradesSynced.success.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: `Failed to submit score`,
-      });
-    }
-  }
-
-  return res.send(gradesSynced);
-});
-
-ltiRouter.get('/members', async (req: Request, res: Response) => {
-  const token = res.locals.token;
-  if (!token) {
-    return res.status(403).send({ error: 'Invalid Lti token' });
-  }
-  const members = await lti.NamesAndRoles.getMembers(token);
-  return res.json(members);
-
-  // if (result) {
-  // https://community.canvaslms.com/t5/Developers-Group/LTI-1-3-mixing-roles/td-p/576665
-  //   for (const member of result.members) {
-  //     /*
-  //       TODO: handle specific permissions in the insutition config
-  //       System Roles:
-  //       - Highest level of access across the entire LMS
-  //       - /system/person#User
-  //       - /system/person#SysAdmin
-  //       Institution Roles:
-  //       - Administrator, Instruction, Student
-  //       - /institution/person#Administrator
-  //       - /institution/person#Instructor
-  //       - /institution/person#Student
-  //       Context (Course) Roles:
-  //       - Instructor, Student
-  //       - /membership#Instructor
-  //       - /membership#Student || /membership#Learner
-  //     */
-  //     console.log(member.roles);
-  //     if (member.roles.some((role) => role === 'Learner')) {
-  //       console.log(`${member.name} is a Student in ${result.context.title}!`);
-  //     } else if (member.roles.some((role) => role === 'Instructor')) {
-  //       console.log(`${member.name} is an Instructor (Teacher) for ${result.context.title}!`);
-  //     } else if (member.roles.some((role) => role === 'Administrator')) {
-  //       console.log(`${member.name} is an Administrator for ${result.context.title}!`);
-  //     }
-  //   }
-  // }
-});
-
-/*
- * Retrieves linked unit information for a context
- */
-ltiRouter.get('/link', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-
-  // const contextId = req.query.contextId;
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-  const link = await UnitLink.findOne({ contextId });
-  res.json(link);
-});
-
-/*
- * Links a unit to an LMS context
- */
-ltiRouter.post('/link', async (req: Request, res: Response) => {
-  const { unitId } = req.body;
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-
-  // TODO: validate request with our ruby API first
-
-  // const signedToken = jwt.sign(newToken, LTI_SHARED_API_SECRET);
-
-  // // TODO: signedToken as a query param or an Authorization header?
-  // const response = await fetch(`http://localhost:4200/api/lti/deeplink?ltik=${signedToken}`, {
-  //   method: 'GET',
-  //   headers: {
-  //     // Authorization: String(req.headers['authorization'] ?? ''), //
-  //     'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-  //     Username: String(req.headers['username'] ?? ''),
-  //   },
-  // });
-
-  const result = await UnitLink.findOneAndUpdate(
-    { contextId },
-    { unitId },
-    { upsert: true, new: true },
-  );
-  res.json(result);
-});
-
-/*
- * Enrols an LMS user into the linked OnTrack Unit
- */
-ltiRouter.post('/enrolments', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-
-  // Has our context been linked to an OnTrack unit?
-  const link = await UnitLink.findOne({ contextId });
-  if (!link) {
-    return res.status(404).json({ error: 'Unit link not found' });
-  }
-
-  if (!_token) {
-    return res.status(400);
-  }
-
-  const members = await lti.NamesAndRoles.getMembers(_token);
-  if (!members) {
-    return res.status(400);
-  }
-
-  const newToken = {
-    unit_id: link?.unitId,
-    members: members.members,
-  };
-
-  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
-
-  const response = await fetch(`http://localhost:4200/api/lti/enrol/bulk`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-      Username: String(req.headers['username'] ?? ''),
-    },
-    body: JSON.stringify({
-      ltik: signedToken,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
-  }
-
-  const data = await response.json();
-
-  res.json(data);
-});
-
-/*
- * Enrols a list of LMS users into the linked OnTrack Unit
- */
-ltiRouter.post('/enrol', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-
-  // Has our context been linked to an OnTrack unit?
-  const link = await UnitLink.findOne({ contextId });
-  if (!link) {
-    return res.status(404).json({ error: 'Unit link not found' });
-  }
-
-  const members = await lti.NamesAndRoles.getMembers(_token!);
-  if (!members) {
-    return res.status(404).json({ error: 'Could not retrieve member information' });
-  }
-  const member = members.members.find((m) => m.user_id === token.user);
-  // TODO: check the roles of this incoming token
-
-  const newToken = {
-    unit_id: link?.unitId,
-    member: member,
-  };
-
-  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
-
-  const response = await fetch(`http://localhost:4200/api/lti/enrol`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Auth-Token': String(req.headers['auth-token'] ?? ''), // Forward OnTrack's original authorisation token
-      Username: String(req.headers['username'] ?? ''),
-    },
-    body: JSON.stringify({
-      ltik: signedToken,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
-  }
-
-  const data = await response.json();
-
-  res.json(data);
-});
-
-/*
- * Removes link between a unit and the LMS context
- */
-ltiRouter.delete('/link', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
-
-  await UnitLink.deleteMany({ contextId });
-  res.status(204).send();
-});
-
-// ltiRouter.get('/info', async (_req: Request, res: Response) => {
-//   const _token = res.locals.token;
-//   const token = _token as unknown as LtiLaunchPayload;
-
-//   console.log(token);
-//   console.log(res.locals.context);
-//   // const context = res.locals.context;
-//   const context = token.platformContext;
-
-//   if (!token || !context) {
-//     return res.status(400);
-//   }
-
-//   const info: {
-//     name?: string;
-//     email?: string;
-//     roles?: string[];
-//     custom?: any;
-//     context?:
-//       | {
-//           id?: string;
-//           label?: string;
-//           title?: string;
-//           type?: string[];
-//         }
-//       | undefined;
-//   } = {};
-//   if (token.userInfo) {
-//     if (token.userInfo.name) info.name = token.userInfo.name;
-//     if (token.userInfo.email) info.email = token.userInfo.email;
-//   }
-
-//   if (context.roles) info.roles = context.roles;
-//   if (context.context) info.context = context.context;
-//   if (context.custom) info.custom = context.custom;
-
-//   return res.send(info);
-// });
 
 const setup = async () => {
   try {
@@ -512,6 +114,9 @@ const setup = async () => {
   });
 };
 
-lti.app.use('/lti/api', ltiRouter);
+lti.app.use('/lti/api', GradeRouter);
+lti.app.use('/lti/api', EnrolmentRouter);
+lti.app.use('/lti/api', UnitLinkRouter);
+lti.app.use('/lti/api', MemberRoute);
 
 setup();
