@@ -54,11 +54,6 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     }
     const member = members.members.find((m) => m.user_id === token.user);
 
-    // TODO: attach more information like user-agent and IP to this token
-    // TODO: .. so that when user tries using it to log in to the api, it ensures IPs match
-    // console.log(req.ip);
-    // console.log(req.get('user-agent'));
-
     const newToken = {
       member: member,
       iat: Math.floor(Date.now() / 1000),
