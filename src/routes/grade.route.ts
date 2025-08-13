@@ -32,6 +32,9 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   const newToken = {
     unit_id: link.unitId,
     student_emails: [...members.members.map((m) => m.email)],
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30,
+    jti: crypto.randomUUID(),
   };
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);

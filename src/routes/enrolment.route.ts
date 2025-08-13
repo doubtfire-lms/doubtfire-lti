@@ -33,6 +33,9 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
   const newToken = {
     unit_id: link?.unitId,
     members: members.members,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+    jti: crypto.randomUUID(),
   };
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
@@ -78,14 +81,14 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Could not retrieve member information' });
   }
   const member = members.members.find((m) => m.user_id === token.user);
-  // TODO: check the roles of this incoming token
 
   const newToken = {
     unit_id: link?.unitId,
     member: member,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30,
+    jti: crypto.randomUUID(),
   };
-
-  console.log(member);
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 

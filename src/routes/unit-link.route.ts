@@ -30,6 +30,9 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
 
   const newToken = {
     unit_id: unitId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30,
+    jti: crypto.randomUUID(),
   };
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
