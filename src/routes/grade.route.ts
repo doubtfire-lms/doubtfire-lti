@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { RetrievedGrade, Provider as lti } from 'ltijs';
 import { Config } from '../config';
+import { sendError } from '../errors';
 import UnitLink from '../schema/unitLink.model';
 import { LtiLaunchPayload } from '../types';
 
@@ -13,7 +14,7 @@ export const GradeRouter = express.Router();
 GradeRouter.post('/grades', async (req: Request, res: Response) => {
   const _token = res.locals.token;
   if (!_token) {
-    return res.status(400).send({ error: 'Invalid Lti token' });
+    return sendError(res, 'Invalid Lti Token', 400);
   }
 
   const token = _token as unknown as LtiLaunchPayload;
@@ -21,12 +22,12 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
 
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
-    return res.status(404).send({ error: 'No unit is linked to this course' });
+    return sendError(res, 'No unit is linked to this course', 404);
   }
 
   const members = await lti.NamesAndRoles.getMembers(_token);
   if (!members) {
-    return res.status(400);
+    return sendError(res, 'Unable to retrieve members', 400);
   }
 
   const newToken = {
@@ -53,12 +54,12 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
+    return sendError(res, errorBody, response.status);
   }
 
   const data = (await response.json()) as Record<string, number> | null;
   if (data === null) {
-    return res.status(404);
+    return sendError(res, 'Failed to retrieve grades', 404);
   }
 
   let lineItemId = token.platformContext?.endpoint?.lineitem; // Attempting to retrieve it from idtoken

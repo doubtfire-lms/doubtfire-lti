@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Provider as lti } from 'ltijs';
 import { Config } from '../config';
+import { sendError } from '../errors';
 import UnitLink from '../schema/unitLink.model';
 import { LtiLaunchPayload } from '../types';
 
@@ -18,11 +19,11 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
   // Has our context been linked to an OnTrack unit?
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
-    return res.status(404).json({ error: 'Unit link not found' });
+    return sendError(res, 'Unit link not found', 404);
   }
 
   if (!_token) {
-    return res.status(400);
+    return sendError(res, 'Invalid token', 403);
   }
 
   const members = await lti.NamesAndRoles.getMembers(_token);
@@ -54,7 +55,7 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
+    return sendError(res, errorBody, response.status);
   }
 
   const data = await response.json();
@@ -73,13 +74,14 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
   // Has our context been linked to an OnTrack unit?
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
-    return res.status(404).json({ error: 'Unit link not found' });
+    return sendError(res, 'Unit link not found', 404);
   }
 
   const members = await lti.NamesAndRoles.getMembers(_token!);
   if (!members) {
-    return res.status(404).json({ error: 'Could not retrieve member information' });
+    return sendError(res, 'Could not retrieve member information', 404);
   }
+
   const member = members.members.find((m) => m.user_id === token.user);
 
   const newToken = {
@@ -106,7 +108,7 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
+    return sendError(res, errorBody, response.status);
   }
 
   const data = await response.json();

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Config } from '../config';
+import { sendError } from '../errors';
 import UnitLink from '../schema/unitLink.model';
 import { LtiLaunchPayload } from '../types';
 
@@ -51,7 +52,7 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    return res.status(response.status).json(errorBody);
+    return sendError(res, errorBody, response.status);
   }
 
   // Current OnTrack user has permissions to enrol students into requested unit_id

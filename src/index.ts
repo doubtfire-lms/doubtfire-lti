@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { IdToken, Provider as lti } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
+import { sendError } from './errors';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
 import { MemberRoute } from './routes/member.route';
@@ -49,7 +50,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
 
   lti.NamesAndRoles.getMembers(_token!).then((members) => {
     if (!members) {
-      return res.status(404).json({ error: 'Could not retrieve member information' });
+      return sendError(res, 'Could not retrieve member information', 400);
     }
     const member = members.members.find((m) => m.user_id === token.user);
 
