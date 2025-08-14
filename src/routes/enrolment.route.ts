@@ -106,6 +106,10 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
     }),
   });
 
+  if (response.status === 204) {
+    return sendError(res, 'Unable to enrol, user must only have student roles.', 204);
+  }
+
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
     return sendError(res, errorBody, response.status);
