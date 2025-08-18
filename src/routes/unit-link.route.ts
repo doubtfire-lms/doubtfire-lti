@@ -72,6 +72,46 @@ UnitLinkRouter.delete('/link', async (req: Request, res: Response) => {
   const token = _token as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
+  const link = await UnitLink.findOne({ contextId });
+  if (!link) {
+    sendError(res, 'Nothing to unlink.', 400);
+    return;
+  }
+
+  const unitId = link.unitId;
+
+  if (!unitId) {
+    sendError(res, 'Invalid unit.', 400);
+    return;
+  }
+
+  const newToken = {
+    unit_id: unitId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30,
+    jti: crypto.randomUUID(),
+  };
+
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
+
+  // Re-use the same endpoint to check if current user has OnTrack convenor permissions
+  const response = await fetch(`${Config.HOST}/api/lti/link`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Auth-Token': String(req.headers['auth-token'] ?? ''),
+      Username: String(req.headers['username'] ?? ''),
+    },
+    body: JSON.stringify({
+      ltik: signedToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    return sendError(res, errorBody, response.status);
+  }
+
   await UnitLink.deleteMany({ contextId });
   res.status(204).send();
 });
