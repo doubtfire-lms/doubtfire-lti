@@ -4,7 +4,9 @@
 
 This API acts as a bridge between OnTrack’s Ruby API and LTI.js. The Angular frontend communicates with:
 
-• LTI.js API → http://localhost:4200/lti
+• LTI Dashboard → http://localhost:4200/lti
+
+• LTI.js API → http://localhost:4200/lti/api
 
 • Ruby API → http://localhost:4200/api
 
