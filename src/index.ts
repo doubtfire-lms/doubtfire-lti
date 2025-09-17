@@ -97,7 +97,9 @@ ltiRouter.use(express.json());
 lti.app.use(express.json());
 
 const setup = async () => {
-  console.log(`Running LTI Server on port ${Config.PORT}`);
+  console.log(
+    `Running LTI Server on port ${Config.PORT} in ${Config.IS_PRODUCTION ? 'Production' : 'Development'} mode`,
+  );
   console.log(`LTI Host is running on ${Config.HOST}`);
   console.log(`Connecting to ${Config.DB_HOST}, ${Config.DB_NAME}.`);
   try {
