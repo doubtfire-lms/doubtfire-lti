@@ -1,4 +1,5 @@
 import eslintConfigPrettier from 'eslint-config-prettier';
+import prettierPlugin from 'eslint-plugin-prettier';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -42,6 +43,12 @@ export default tseslint.config(
           selector: 'parameter',
         },
       ],
+    },
+  },
+  {
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      'prettier/prettier': 'warn',
     },
   },
   eslintConfigPrettier,
