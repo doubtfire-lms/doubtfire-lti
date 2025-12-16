@@ -48,43 +48,60 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     console.log(context.type);
   }
 
-  lti.NamesAndRoles.getMembers(_token!).then((members) => {
-    if (!members) {
-      return sendError(res, 'Could not retrieve member information', 400);
-    }
-    const member = members.members.find((m) => m.user_id === token.user);
+  lti.NamesAndRoles.getMembers(_token!)
+    .then((members) => {
+      if (!members) {
+        return sendError(res, 'Could not retrieve member information', 400);
+      }
+      const member = members.members.find((m) => m.user_id === token.user);
+      if (!member) {
+        return sendError(res, 'Could not retrieve member information', 400);
+      }
+      const newToken = {
+        member: member,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+        jti: crypto.randomUUID(),
+      };
+      const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-    const newToken = {
-      member: member,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
-      jti: crypto.randomUUID(),
-    };
-    const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
-
-    // Create user and generate one-time auth token for the user to sign in with
-    fetch(`${Config.HOST}/api/auth/lti`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ltik: signedToken,
-      }),
+      // Create user and generate one-time auth token for the user to sign in with
+      fetch(`${Config.HOST}/api/auth/lti`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ltik: signedToken,
+        }),
+      })
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) {
+            throw data;
+          }
+          return data;
+        })
+        .then((data) => {
+          const auth = data as AuthResponse;
+          if (!auth.auth_token || !auth.username) {
+            throw 'Failed to generate user credentials';
+          }
+          res.redirect(
+            `${Config.HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
+          );
+        })
+        .catch((error) => {
+          return sendError(res, error?.error ?? error, 403);
+        });
     })
-      .then((response) => {
-        return response.json();
-      })
-      .then((data) => {
-        const auth = data as AuthResponse;
-        res.redirect(
-          `${Config.HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
-        );
-      })
-      .catch(() => {
-        res.redirect(`${Config.HOST}/timeout`);
-      });
-  });
+    .catch((error) => {
+      return sendError(
+        res,
+        'Failed to get member information. Ensure our public Keyset URL is accessible from your platform.',
+        error.status,
+      );
+    });
 });
 
 // app.set('trust proxy', true);
