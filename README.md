@@ -29,19 +29,19 @@ Most permissions are handled by OnTrack's Ruby API. This means you will already 
 
 ```yaml
 Tool Name: OnTrack
-Tool URL: http://localhost:4200/lti/
+Tool URL: http://localhost:4200/lti/api/
 LTI Version: LTI 1.3
 Public Key Type: Keyset URL
 
-Public keyset URL: http://localhost:4200/lti/keys
+Public keyset URL: http://localhost:4200/lti/api/keys
 
 # If moodle is running in a Docker container, you need to specify `host.docker.internal` so that it can make a fetch request to moodles public keys
-Public keyset URL: http://host.docker.internal/lti/keys
+Public keyset URL: http://host.docker.internal:3001/lti/api/keys
 
 # These routes are loaded in the browser, and can reach localhost
 
-Initiate login URL: http://localhost:4200/lti/login
-Redirection URI(s): http://localhost:4200/lti/
+Initiate login URL: http://localhost:4200/lti/api/login
+Redirection URI(s): http://localhost:4200/lti/api/
 ```
 
 ## Configuring the Lti API Environment variables
