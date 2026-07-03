@@ -22,20 +22,20 @@
     "ts-node-dev": "^2.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.32.0",
+    "@eslint/js": "^9.39.4",
     "@eslint/json": "^0.13.1",
-    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/ltijs": "^4.0.12",
+    "@types/ltijs": "^5.9.0",
     "@types/node": "^24.1.0",
-    "eslint": "^9.32.0",
+    "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "globals": "^16.3.0",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
-    "typescript": "5.8.3",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.38.0"
   }
 }

@@ -32,7 +32,6 @@ lti.setup(
       // Set sameSite to 'None' if the testing platform is in a different domain and https is being used
       sameSite: Config.LTI_COOKIES_SAMESITE,
     },
-    // @ts-expect-error Type is not defined.
     // Set DevMode to true if the testing platform is in a different domain and https is not being used
     devMode: !Config.IS_PRODUCTION,
   },
