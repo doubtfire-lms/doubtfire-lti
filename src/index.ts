@@ -65,7 +65,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
       const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
       // Create user and generate one-time auth token for the user to sign in with
-      fetch(`${Config.HOST}/api/auth/lti`, {
+      fetch(`${Config.API_HOST}/api/auth/lti`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,7 +87,7 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
             throw 'Failed to generate user credentials';
           }
           res.redirect(
-            `${Config.HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
+            `${Config.APP_HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
           );
         })
         .catch((error) => {
@@ -116,7 +116,8 @@ const setup = async () => {
   console.log(
     `Running LTI Server on port ${Config.PORT} in ${Config.IS_PRODUCTION ? 'Production' : 'Development'} mode`,
   );
-  console.log(`LTI Host is running on ${Config.HOST}`);
+  console.log(`LTI API host is ${Config.API_HOST}`);
+  console.log(`LTI public application host is ${Config.APP_HOST}`);
   console.log(`Connecting to ${Config.DB_HOST}, ${Config.DB_NAME}.`);
   try {
     await mongoose.connect(
