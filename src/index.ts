@@ -6,6 +6,7 @@ import { Config } from './config';
 import { sendError } from './errors';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
+import { INTERNAL_SYNC_ROUTE_PATH, InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
 import { LtiLaunchPayload } from './types';
@@ -197,6 +198,9 @@ ltiRouter.use(express.urlencoded({ extended: true }));
 ltiRouter.use(express.json());
 lti.app.use(express.json());
 
+// This backend-only diagnostic route is disabled unless INTERNAL_SYNC_KEY is configured.
+lti.whitelist({ route: INTERNAL_SYNC_ROUTE_PATH, method: 'POST' });
+
 const setup = async () => {
   console.log(
     `Running LTI Server on port ${Config.PORT} in ${Config.IS_PRODUCTION ? 'Production' : 'Development'} mode`,
@@ -233,5 +237,6 @@ lti.app.use('/lti/api', GradeRouter);
 lti.app.use('/lti/api', EnrolmentRouter);
 lti.app.use('/lti/api', UnitLinkRouter);
 lti.app.use('/lti/api', MemberRoute);
+lti.app.use('/lti/api', InternalSyncRoute);
 
 setup();
