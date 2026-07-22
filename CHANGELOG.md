@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.1.0-0](///compare/v1.0.3...v1.1.0-0) (2026-07-22)
+
+
+### Features
+
+* init test route to fetch lti members server side 0b2d2e3
+* separate internal api and public app hosts 50eb597
+
 ### [1.0.3](///compare/v1.0.2...v1.0.3) (2026-07-03)
 
 ### [1.0.2](///compare/v1.0.1...v1.0.2) (2026-02-17)
