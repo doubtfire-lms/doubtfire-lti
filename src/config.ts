@@ -3,8 +3,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
-if (!process.env.HOST) throw 'HOST is not defined';
-const HOST = process.env.HOST;
+if (!process.env.API_HOST) throw 'API_HOST is not defined';
+if (!process.env.APP_HOST) throw 'APP_HOST is not defined';
+const API_HOST = process.env.API_HOST;
+const APP_HOST = process.env.APP_HOST;
 
 // MongoDB Configuration
 if (!process.env.DB_HOST) throw 'DB_HOST is not defined';
@@ -44,7 +46,8 @@ const PLATFORM_AUTHCONFIG_KEY = process.env.PLATFORM_AUTHCONFIG_KEY;
 
 export const Config = {
   PORT,
-  HOST,
+  API_HOST,
+  APP_HOST,
 
   DB_HOST,
   DB_NAME,

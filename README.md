@@ -47,19 +47,26 @@ Redirection URI(s): http://localhost:4200/lti/api/
 ## Configuring the Lti API Environment variables
 
 ```yaml
-HOST: http://localhost:4200
+# Base URL used by the LTI server to call the Rails API.
+# Use http://apiserver:3000 when both containers share a Docker network;
+# otherwise use an API URL reachable from the LTI container, such as
+# https://ontrack.example.com.
+API_HOST: http://apiserver:3000
+
+# Public OnTrack URL used for redirects sent to the user's browser.
+APP_HOST: https://ontrack.example.com
 
 PORT: 3002
 LTI_KEY: your-secret-lti-key
 
-PLATFORM_URL: http://localhost/moodle
+PLATFORM_URL: https://moodle.example.com
 PLATFORM_NAME: Moodle Test Environment
 # Once you have added OnTrack as an external tool, you can retrieve its client ID and add it here
 PLATFORM_CLIENT_ID: your-client-id
-PLATFORM_AUTHENTICATION_ENDPOINT: http://localhost/moodle/mod/lti/auth.php
-PLATFORM_ACCESS_TOKEN_ENDPOINT: http://localhost/moodle/mod/lti/token.php
+PLATFORM_AUTHENTICATION_ENDPOINT: https://moodle.example.com/mod/lti/auth.php
+PLATFORM_ACCESS_TOKEN_ENDPOINT: https://moodle.example.com/mod/lti/token.php
 PLATFORM_AUTHCONFIG_METHOD: JWK_SET
-PLATFORM_AUTHCONFIG_KEY: http://localhost/moodle/mod/lti/certs.php
+PLATFORM_AUTHCONFIG_KEY: https://moodle.example.com/mod/lti/certs.php
 
 # MongoDB details
 DB_HOST: localhost:27017
@@ -71,6 +78,14 @@ DB_PASS:
 # Must match the value configured in the Ruby API.
 LTI_SHARED_API_SECRET: your-secret-shared-api-secret
 ```
+
+`API_HOST` must be reachable from the LTI server and must include the URL scheme, but no
+trailing slash or `/api` suffix. An internal service URL such as `http://apiserver:3000`
+works only when the LTI and Rails API containers share a Docker network. If they do not,
+use a remote URL that the LTI container can reach, such as `https://ontrack.example.com`.
+
+`APP_HOST` must always be OnTrack's public, browser-accessible URL. Do not set it to an
+internal Docker hostname or to the Moodle URL.
 
 ## Sequence diagram
 

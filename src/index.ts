@@ -15,6 +15,44 @@ interface AuthResponse {
   auth_token: string;
 }
 
+class RailsAuthenticationError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly railsStatus: number | null,
+    readonly responseBody: unknown,
+  ) {
+    super(message);
+    this.name = 'RailsAuthenticationError';
+  }
+}
+
+function parseResponseBody(body: string): unknown {
+  if (!body) return null;
+
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
+  }
+}
+
+function railsErrorMessage(body: unknown, fallback: string): string {
+  if (typeof body === 'string' && body) return body;
+  if (!body || typeof body !== 'object') return fallback;
+
+  for (const key of ['error', 'message']) {
+    const value = (body as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value) return value;
+    if (value && typeof value === 'object') {
+      const nestedMessage = (value as Record<string, unknown>).message;
+      if (typeof nestedMessage === 'string' && nestedMessage) return nestedMessage;
+    }
+  }
+
+  return fallback;
+}
+
 lti.setup(
   Config.LTI_KEY,
   {
@@ -65,7 +103,10 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
       const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
       // Create user and generate one-time auth token for the user to sign in with
-      fetch(`${Config.HOST}/api/auth/lti`, {
+      const authUrl = `${Config.API_HOST}/api/auth/lti`;
+      console.info(JSON.stringify({ event: 'rails_authentication_request', url: authUrl }));
+
+      fetch(authUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,23 +116,67 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
         }),
       })
         .then(async (response) => {
-          const data = await response.json();
+          const responseBody = parseResponseBody(await response.text());
           if (!response.ok) {
-            throw data;
+            throw new RailsAuthenticationError(
+              railsErrorMessage(
+                responseBody,
+                `Rails authentication failed with ${response.status} ${response.statusText}`,
+              ),
+              response.status,
+              response.status,
+              responseBody,
+            );
           }
-          return data;
+
+          const auth = responseBody as Partial<AuthResponse> | null;
+          if (!auth || typeof auth !== 'object' || !auth.auth_token || !auth.username) {
+            throw new RailsAuthenticationError(
+              'Rails authentication response did not include user credentials',
+              502,
+              response.status,
+              responseBody,
+            );
+          }
+
+          console.info(
+            JSON.stringify({
+              event: 'rails_authentication_response',
+              url: authUrl,
+              status: response.status,
+            }),
+          );
+          // Do not log the successful response body because it contains an authentication token.
+          return auth as AuthResponse;
         })
-        .then((data) => {
-          const auth = data as AuthResponse;
-          if (!auth.auth_token || !auth.username) {
-            throw 'Failed to generate user credentials';
-          }
+        .then((auth) => {
           res.redirect(
-            `${Config.HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
+            `${Config.APP_HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
           );
         })
         .catch((error) => {
-          return sendError(res, error?.error ?? error, 403);
+          const authenticationError =
+            error instanceof RailsAuthenticationError
+              ? error
+              : new RailsAuthenticationError(
+                  error instanceof Error ? error.message : String(error),
+                  502,
+                  null,
+                  null,
+                );
+
+          console.error(
+            JSON.stringify({
+              event: 'rails_authentication_failure',
+              url: authUrl,
+              status: authenticationError.status,
+              railsStatus: authenticationError.railsStatus,
+              responseBody: authenticationError.responseBody,
+              error: authenticationError.message,
+            }),
+          );
+
+          return sendError(res, authenticationError.message, authenticationError.status);
         });
     })
     .catch((error) => {
@@ -116,7 +201,8 @@ const setup = async () => {
   console.log(
     `Running LTI Server on port ${Config.PORT} in ${Config.IS_PRODUCTION ? 'Production' : 'Development'} mode`,
   );
-  console.log(`LTI Host is running on ${Config.HOST}`);
+  console.log(`LTI API host is ${Config.API_HOST}`);
+  console.log(`LTI public application host is ${Config.APP_HOST}`);
   console.log(`Connecting to ${Config.DB_HOST}, ${Config.DB_NAME}.`);
   try {
     await mongoose.connect(

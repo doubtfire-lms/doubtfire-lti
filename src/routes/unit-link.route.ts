@@ -38,7 +38,7 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
 
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-  const response = await fetch(`${Config.HOST}/api/lti/link`, {
+  const response = await fetch(`${Config.API_HOST}/api/lti/link`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -95,7 +95,7 @@ UnitLinkRouter.delete('/link', async (req: Request, res: Response) => {
   const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
   // Re-use the same endpoint to check if current user has OnTrack convenor permissions
-  const response = await fetch(`${Config.HOST}/api/lti/link`, {
+  const response = await fetch(`${Config.API_HOST}/api/lti/link`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
