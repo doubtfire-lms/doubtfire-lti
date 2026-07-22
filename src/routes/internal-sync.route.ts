@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { IdToken, Provider as lti } from 'ltijs';
 import { Config } from '../config';
-import { LtiLaunchPayload } from '../types';
+import UnitLink from '../schema/unitLink.model';
 
 export const INTERNAL_SYNC_ROUTE_PATH = '/lti/api/internal/test-members';
 export const InternalSyncRoute = express.Router();
@@ -15,41 +15,40 @@ InternalSyncRoute.post('/internal/test-members', async (req: Request, res: Respo
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { issuer, clientId, contextId, user } = req.body as Record<string, unknown>;
-  if (
-    typeof issuer !== 'string' ||
-    typeof clientId !== 'string' ||
-    typeof contextId !== 'string' ||
-    typeof user !== 'string'
-  ) {
+  const { unitId, contextId } = req.body as Record<string, unknown>;
+  const hasContextId = typeof contextId === 'string' && contextId.length > 0;
+  const hasUnitId = (typeof unitId === 'string' && unitId.length > 0) || typeof unitId === 'number';
+  if (!hasUnitId && !hasContextId) {
     return res.status(400).json({
-      error: 'issuer, clientId, contextId and user must be strings',
+      error: 'unitId or contextId must be provided',
     });
   }
 
   try {
-    const storedContexts = await lti.Database.Get(false, 'contexttoken', {
-      contextId,
-      user,
-    });
-
-    if (!Array.isArray(storedContexts) || !storedContexts[0]) {
+    const link = await UnitLink.findOne(hasContextId ? { contextId } : { unitId: String(unitId) });
+    if (!link) {
       return res.status(404).json({
-        error: 'Stored LTI context not found; perform a new LMS launch',
+        error: 'Linked LMS context not found',
       });
     }
 
-    const platformContext = storedContexts[0] as LtiLaunchPayload['platformContext'];
-    if (!platformContext?.namesRoles?.context_memberships_url) {
+    if (!link.issuer || !link.clientId || !link.deploymentId || !link.membershipsUrl) {
       return res.status(422).json({
-        error: 'Stored LTI context does not include an NRPS memberships URL',
+        error: 'Link does not include NRPS service details; launch and link the unit again',
       });
     }
 
     const serviceToken = {
-      iss: issuer,
-      clientId,
-      platformContext,
+      iss: link.issuer,
+      clientId: link.clientId,
+      deploymentId: link.deploymentId,
+      platformContext: {
+        context: { id: link.contextId },
+        namesRoles: {
+          context_memberships_url: link.membershipsUrl,
+          service_versions: ['2.0'],
+        },
+      },
     } as unknown as IdToken;
 
     // Ltijs supports `pages: false` to retrieve every page, although its bundled
