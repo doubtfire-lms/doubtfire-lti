@@ -77,6 +77,10 @@ DB_PASS:
 # Secret key used by the Ruby API to decode our custom LTI tokens.
 # Must match the value configured in the Ruby API.
 LTI_SHARED_API_SECRET: your-secret-shared-api-secret
+
+# Production defaults are true and none. Override both for plain-HTTP local development.
+LTI_COOKIES_SECURE: true
+LTI_COOKIES_SAMESITE: strict
 ```
 
 `API_HOST` must be reachable from the LTI server and must include the URL scheme, but no

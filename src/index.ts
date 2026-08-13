@@ -4,6 +4,11 @@ import { IdToken, Provider as lti } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
+import {
+  LTI_SESSION_COOKIE,
+  installLtiSessionMiddleware,
+  ltiSessionCookieOptions,
+} from './lti-session';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
 import { INTERNAL_SYNC_ROUTE_PATH, InternalSyncRoute } from './routes/internal-sync.route';
@@ -65,6 +70,9 @@ lti.setup(
     appUrl: '/lti/api/',
     loginUrl: '/lti/api/login',
     keysetUrl: '/lti/api/keys',
+    // Disable Ltijs' permissive CORS; our middleware restricts credentials to APP_HOST.
+    cors: false,
+    serverAddon: installLtiSessionMiddleware,
     cookies: {
       // Set secure to true if the testing platform is in a different domain and https is being used
       secure: Config.LTI_COOKIES_SECURE,
@@ -151,9 +159,13 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
           return auth as AuthResponse;
         })
         .then((auth) => {
-          res.redirect(
-            `${Config.APP_HOST}/sign_in?ltik=${res.locals.ltik}&authToken=${auth.auth_token}&username=${auth.username}&isLtiLogin=true`,
-          );
+          res.cookie(LTI_SESSION_COOKIE, res.locals.ltik, ltiSessionCookieOptions);
+
+          const signInUrl = new URL('/sign_in', Config.APP_HOST);
+          signInUrl.searchParams.set('authToken', auth.auth_token);
+          signInUrl.searchParams.set('username', auth.username);
+          signInUrl.searchParams.set('isLtiLogin', 'true');
+          res.redirect(signInUrl.toString());
         })
         .catch((error) => {
           const authenticationError =
