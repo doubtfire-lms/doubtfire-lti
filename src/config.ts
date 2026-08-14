@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 if (!process.env.API_HOST) throw 'API_HOST is not defined';
 if (!process.env.APP_HOST) throw 'APP_HOST is not defined';
 const API_HOST = process.env.API_HOST;
@@ -23,8 +24,15 @@ const LTI_KEY = process.env.LTI_KEY;
 const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
 const INTERNAL_SYNC_KEY: string | undefined = process.env.INTERNAL_SYNC_KEY;
 
-const LTI_COOKIES_SECURE = Boolean(process.env.LTI_COOKIES_SECURE ?? false);
-const LTI_COOKIES_SAMESITE = process.env.LTI_COOKIES_SAMESITE ?? '';
+const LTI_COOKIES_SECURE =
+  (process.env.LTI_COOKIES_SECURE ?? String(IS_PRODUCTION)).toLowerCase() === 'true';
+const sameSite = (
+  process.env.LTI_COOKIES_SAMESITE ?? (IS_PRODUCTION ? 'none' : 'lax')
+).toLowerCase();
+if (!['lax', 'strict', 'none'].includes(sameSite)) {
+  throw 'LTI_COOKIES_SAMESITE must be lax, strict or none';
+}
+const LTI_COOKIES_SAMESITE = sameSite as 'lax' | 'strict' | 'none';
 
 // Platform Configuration
 if (!process.env.PLATFORM_URL) throw 'PLATFORM_URL is not defined';
@@ -69,5 +77,5 @@ export const Config = {
   PLATFORM_AUTHCONFIG_METHOD,
   PLATFORM_AUTHCONFIG_KEY,
 
-  IS_PRODUCTION: process.env.NODE_ENV === 'production',
+  IS_PRODUCTION,
 };
