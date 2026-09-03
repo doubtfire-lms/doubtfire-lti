@@ -78,6 +78,11 @@ DB_PASS:
 # Must match the value configured in the Ruby API.
 LTI_SHARED_API_SECRET: your-secret-shared-api-secret
 
+# Per-client rate limits for the window below.
+LTI_RATE_LIMIT_WINDOW_MS: 60000
+LTI_LAUNCH_RATE_LIMIT_MAX: 20
+LTI_API_RATE_LIMIT_MAX: 120
+
 # Production defaults are true and none. Override both for plain-HTTP local development.
 LTI_COOKIES_SECURE: true
 LTI_COOKIES_SAMESITE: strict

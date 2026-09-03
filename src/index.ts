@@ -9,6 +9,7 @@ import {
   installLtiSessionMiddleware,
   ltiSessionCookieOptions,
 } from './lti-session';
+import { installLtiRateLimits } from './rate-limit';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
 import { INTERNAL_SYNC_ROUTE_PATH, InternalSyncRoute } from './routes/internal-sync.route';
@@ -59,6 +60,11 @@ function railsErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+function installServerMiddleware(app: express.Express): void {
+  installLtiRateLimits(app);
+  installLtiSessionMiddleware(app);
+}
+
 lti.setup(
   Config.LTI_KEY,
   {
@@ -72,7 +78,7 @@ lti.setup(
     keysetUrl: '/lti/api/keys',
     // Disable Ltijs' permissive CORS; our middleware restricts credentials to APP_HOST.
     cors: false,
-    serverAddon: installLtiSessionMiddleware,
+    serverAddon: installServerMiddleware,
     cookies: {
       // Set secure to true if the testing platform is in a different domain and https is being used
       secure: Config.LTI_COOKIES_SECURE,

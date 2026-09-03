@@ -24,6 +24,10 @@ const LTI_KEY = process.env.LTI_KEY;
 const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
 const INTERNAL_SYNC_KEY: string | undefined = process.env.INTERNAL_SYNC_KEY;
 
+const LTI_RATE_LIMIT_WINDOW_MS = Number(process.env.LTI_RATE_LIMIT_WINDOW_MS ?? 60_000);
+const LTI_LAUNCH_RATE_LIMIT_MAX = Number(process.env.LTI_LAUNCH_RATE_LIMIT_MAX ?? 20);
+const LTI_API_RATE_LIMIT_MAX = Number(process.env.LTI_API_RATE_LIMIT_MAX ?? 120);
+
 const LTI_COOKIES_SECURE =
   (process.env.LTI_COOKIES_SECURE ?? String(IS_PRODUCTION)).toLowerCase() === 'true';
 const sameSite = (
@@ -66,6 +70,9 @@ export const Config = {
   LTI_KEY,
   LTI_SHARED_API_SECRET,
   INTERNAL_SYNC_KEY,
+  LTI_RATE_LIMIT_WINDOW_MS,
+  LTI_LAUNCH_RATE_LIMIT_MAX,
+  LTI_API_RATE_LIMIT_MAX,
   LTI_COOKIES_SECURE,
   LTI_COOKIES_SAMESITE,
 
