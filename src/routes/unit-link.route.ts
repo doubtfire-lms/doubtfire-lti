@@ -28,6 +28,14 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
   const _token = res.locals.token;
   const token = _token as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
+  const issuer = token.iss;
+  const clientId = token.clientId;
+  const deploymentId = token.deploymentId;
+  const membershipsUrl = token.platformContext?.namesRoles?.context_memberships_url;
+
+  if (!contextId || !issuer || !clientId || !deploymentId || !membershipsUrl) {
+    return sendError(res, 'LTI launch does not include the required NRPS context', 422);
+  }
 
   const newToken = {
     unit_id: unitId,
@@ -58,8 +66,14 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
   // Current OnTrack user has permissions to enrol students into requested unit_id
   const result = await UnitLink.findOneAndUpdate(
     { contextId },
-    { unitId },
-    { upsert: true, new: true },
+    {
+      unitId,
+      issuer,
+      clientId,
+      deploymentId,
+      membershipsUrl,
+    },
+    { upsert: true, new: true, runValidators: true },
   );
   res.json(result);
 });
