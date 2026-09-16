@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
-import { Provider as lti } from 'ltijs';
 import { sendError } from '../errors';
-import { LtiLaunchPayload } from '../types';
+import { stringArrayClaim, stringClaim } from '../lti-claims';
 
 export const MemberRoute = express.Router();
 
@@ -9,14 +8,13 @@ export const MemberRoute = express.Router();
  * Retrieves token information
  */
 MemberRoute.get('/info', async (_req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
-
-  const context = token.platformContext;
-
-  if (!token || !context) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return sendError(res, 'Invalid Lti token', 403);
   }
+
+  const token = launchContext.idToken;
+  const context = token.launch.context;
 
   const info: {
     name?: string;
@@ -32,24 +30,33 @@ MemberRoute.get('/info', async (_req: Request, res: Response) => {
         }
       | undefined;
   } = {};
-  if (token.userInfo) {
-    if (token.userInfo.name) info.name = token.userInfo.name;
-    if (token.userInfo.email) info.email = token.userInfo.email;
-  }
+  if (token.user.name) info.name = token.user.name;
+  if (token.user.email) info.email = token.user.email;
 
-  if (context.roles) info.roles = context.roles;
-  if (context.context) info.context = context.context;
-  if (context.custom) info.custom = context.custom;
+  info.roles = [...token.user.roles];
+  if (context) {
+    const contextInfo: NonNullable<(typeof info)['context']> = {};
+    const contextId = stringClaim(context, 'id');
+    const contextLabel = stringClaim(context, 'label');
+    const contextTitle = stringClaim(context, 'title');
+    const contextType = stringArrayClaim(context, 'type');
+    if (contextId) contextInfo.id = contextId;
+    if (contextLabel) contextInfo.label = contextLabel;
+    if (contextTitle) contextInfo.title = contextTitle;
+    if (contextType) contextInfo.type = contextType;
+    info.context = contextInfo;
+  }
+  if (token.launch.custom) info.custom = token.launch.custom;
 
   return res.send(info);
 });
 
 MemberRoute.get('/members', async (req: Request, res: Response) => {
-  const token = res.locals.token;
-  if (!token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return sendError(res, 'Invalid Lti token', 403);
   }
-  const members = await lti.NamesAndRoles.getMembers(token);
+  const members = await launchContext.namesAndRoles.getMembers();
   return res.json(members);
 
   // if (result) {

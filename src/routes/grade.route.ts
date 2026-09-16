@@ -1,10 +1,14 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { RetrievedGrade, Provider as lti } from 'ltijs';
+import type { Result, Score } from 'ltijs';
 import { Config } from '../config';
 import { sendError } from '../errors';
+import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
-import { LtiLaunchPayload } from '../types';
+import {
+  findStoredGradeLineItem,
+  gradeLineItemErrorStatus,
+} from '../services/grade-line-item.service';
 
 export const GradeRouter = express.Router();
 
@@ -12,20 +16,50 @@ export const GradeRouter = express.Router();
  * Sync grades for all members in the context
  */
 GradeRouter.post('/grades', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return sendError(res, 'Invalid Lti Token', 400);
   }
 
-  const token = _token as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
     return sendError(res, 'No unit is linked to this course', 404);
   }
 
-  const members = await lti.NamesAndRoles.getMembers(_token);
+  if (!link.lineItemId) {
+    return sendError(
+      res,
+      'No grade line item is linked. Unlink and link the OnTrack unit again.',
+      409,
+    );
+  }
+
+  let lineItemId: string;
+  try {
+    const lineItem = await findStoredGradeLineItem(launchContext, link.lineItemId);
+    if (!lineItem?.id) {
+      return sendError(
+        res,
+        'The linked grade line item is no longer available. Unlink and link the OnTrack unit again.',
+        409,
+      );
+    }
+    lineItemId = lineItem.id;
+  } catch (error) {
+    console.error('Unable to validate the linked Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
+  }
+
+  const members = await launchContext.namesAndRoles.getMembers();
   if (!members) {
     return sendError(res, 'Unable to retrieve members', 400);
   }
@@ -62,28 +96,6 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     return sendError(res, 'Failed to retrieve grades', 404);
   }
 
-  let lineItemId = token.platformContext?.endpoint?.lineitem; // Attempting to retrieve it from idtoken
-
-  if (!lineItemId) {
-    // @ts-expect-error Outdated ltis @types.
-    const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
-    const lineItems = response.lineItems;
-    if (lineItems.length === 0) {
-      // Creating line item if there is none
-      const newLineItem = {
-        scoreMaximum: 100,
-        label: 'Grade',
-        tag: 'grade',
-        resourceLinkId: token.platformContext?.resource?.id,
-        activityProgress: 'Completed',
-        gradingProgress: 'FullyGraded',
-      };
-      // @ts-expect-error Outdated ltis @types.
-      const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
-      lineItemId = lineItem.id;
-    } else lineItemId = lineItems[0].id;
-  }
-
   const gradesSynced: {
     success: { row: string; message: string }[];
     errors: { row: string; message: string }[];
@@ -94,7 +106,10 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     ignored: [],
   };
   for (const user of members.members) {
-    if (data[user.email] === null || data[user.email] === undefined) {
+    const email = typeof user.email === 'string' ? user.email : undefined;
+    const grade = email ? data[email] : undefined;
+
+    if (grade === null || grade === undefined) {
       gradesSynced.ignored.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: 'Project not found',
@@ -102,7 +117,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       continue;
     }
 
-    if (data[user.email] === -1) {
+    if (grade === -1) {
       gradesSynced.errors.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: 'No permission to retrieve grade',
@@ -110,35 +125,25 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       continue;
     }
 
-    if (data[user.email] === 0) {
-      gradesSynced.ignored.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'No grades found',
-      });
-      continue;
-    }
-
     try {
-      const gradeObj = {
-        // userId: token.user,
-        userId: user.user_id,
-        scoreGiven: data[user.email],
+      const gradeObj: Score = {
+        userId: user.userId,
+        scoreGiven: grade,
         scoreMaximum: 100,
         activityProgress: 'Completed',
         gradingProgress: 'FullyGraded',
       };
       // Sending Grade
-      // @ts-expect-error Outdated ltis @types.
-      const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
+      const responseGrade = await launchContext.grading.submitScore(lineItemId, gradeObj);
       if (responseGrade) {
         gradesSynced.success.push({
           row: JSON.stringify(user).replaceAll('\\', ''),
-          message: `Grade synced: ${data[user.email]}%`,
+          message: `Grade synced: ${grade}%`,
         });
       }
     } catch (e) {
       console.error(`Unable to submit scores for ${user.name}`, e);
-      gradesSynced.success.push({
+      gradesSynced.errors.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: `Failed to submit score`,
       });
@@ -152,22 +157,47 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
  * Retrieves the grade for a context member
  */
 GradeRouter.get('/grade', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return res.status(403);
   }
 
-  const token = _token as unknown as LtiLaunchPayload;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
-  const response = await lti.Grade.result(_token);
-  if (!response) {
+  const link = await UnitLink.findOne({ contextId });
+  if (!link?.lineItemId) {
+    return res.status(404).send();
+  }
+
+  let lineItemId: string;
+  try {
+    const lineItem = await findStoredGradeLineItem(launchContext, link.lineItemId);
+    if (!lineItem?.id) {
+      return res.status(404).send();
+    }
+    lineItemId = lineItem.id;
+  } catch (error) {
+    console.error('Unable to validate the linked Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
+  }
+
+  const response = await launchContext.grading.getScores(lineItemId, {
+    userId: launchContext.idToken.user.id,
+  });
+  if (!response.scores.length) {
     return res.status(404);
   }
 
-  // @ts-expect-error Outdated ltis @types.
-  const result = response[0]?.results
-    //
-    .find((r: RetrievedGrade) => r.userId === token.user);
+  const result = response.scores.find(
+    (score: Result) => score.userId === launchContext.idToken.user.id,
+  );
 
   res.json(result);
 });

@@ -1,15 +1,25 @@
+import cookieParser from 'cookie-parser';
 import { CookieOptions, Express, NextFunction, Request, Response } from 'express';
+import type { LaunchContext } from 'ltijs';
 import { Config } from './config';
 
 export const LTI_SESSION_COOKIE = 'ontrack_lti_launch';
 
-interface LtijsRequest extends Request {
-  token?: string;
-}
-
 const appOrigin = new URL(Config.APP_HOST).origin;
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const publicLtiPaths = new Set(['/lti/api', '/lti/api/', '/lti/api/login', '/lti/api/keys']);
+const publicLtiPaths = new Set([
+  '/lti/api',
+  '/lti/api/',
+  '/lti/api/login',
+  '/lti/api/keys',
+  '/lti/api/session',
+]);
+
+declare module 'express-serve-static-core' {
+  interface Locals {
+    launchContext?: LaunchContext;
+  }
+}
 
 function isProtectedBrowserRoute(req: Request): boolean {
   return (
@@ -29,11 +39,15 @@ export const ltiSessionCookieOptions: CookieOptions = {
 
 /**
  * Makes the browser-facing LTI API cookie-authenticated without exposing the
- * ltik to Angular. This runs after ltijs' cookie parser and before its session
- * validator.
+ * ltik to Angular.
  */
-export function installLtiSessionMiddleware(app: Express): void {
-  app.use((req: Request, res: Response, next: NextFunction) => {
+export function installLtiSessionMiddleware(
+  app: Express,
+  resolveLaunchContext: (ltik: string) => Promise<LaunchContext>,
+): void {
+  app.use(cookieParser(Config.LTI_KEY));
+
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/lti/api')) {
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Referrer-Policy', 'no-referrer');
@@ -63,9 +77,13 @@ export function installLtiSessionMiddleware(app: Express): void {
         return res.status(401).json({ error: 'LTI session not found' });
       }
 
-      // Ignore query/body/header ltik values on browser API routes. The signed,
-      // HttpOnly cookie is the only accepted source after launch.
-      (req as LtijsRequest).token = cookieToken;
+      try {
+        // Ignore query/body/header ltik values on browser API routes. The signed,
+        // HttpOnly cookie is the only accepted source after launch.
+        res.locals.launchContext = await resolveLaunchContext(cookieToken);
+      } catch {
+        return res.status(401).json({ error: 'Invalid or expired LTI session' });
+      }
     }
 
     return next();

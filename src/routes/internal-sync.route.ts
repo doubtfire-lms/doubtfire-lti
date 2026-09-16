@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
-import { IdToken, Provider as lti } from 'ltijs';
 import { Config } from '../config';
-import { LtiLaunchPayload } from '../types';
+import { lti } from '../lti-provider';
 
 export const INTERNAL_SYNC_ROUTE_PATH = '/lti/api/internal/test-members';
 export const InternalSyncRoute = express.Router();
@@ -15,48 +14,22 @@ InternalSyncRoute.post('/internal/test-members', async (req: Request, res: Respo
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { issuer, clientId, contextId, user } = req.body as Record<string, unknown>;
-  if (
-    typeof issuer !== 'string' ||
-    typeof clientId !== 'string' ||
-    typeof contextId !== 'string' ||
-    typeof user !== 'string'
-  ) {
+  const { ltik } = req.body as Record<string, unknown>;
+  if (typeof ltik !== 'string' || !ltik) {
     return res.status(400).json({
-      error: 'issuer, clientId, contextId and user must be strings',
+      error: 'ltik must be a non-empty string',
     });
   }
 
   try {
-    const storedContexts = await lti.Database.Get(false, 'contexttoken', {
-      contextId,
-      user,
-    });
-
-    if (!Array.isArray(storedContexts) || !storedContexts[0]) {
-      return res.status(404).json({
-        error: 'Stored LTI context not found; perform a new LMS launch',
-      });
-    }
-
-    const platformContext = storedContexts[0] as LtiLaunchPayload['platformContext'];
-    if (!platformContext?.namesRoles?.context_memberships_url) {
+    const launchContext = await lti.getLaunchContext(ltik);
+    if (!launchContext.namesAndRoles.isAvailable()) {
       return res.status(422).json({
         error: 'Stored LTI context does not include an NRPS memberships URL',
       });
     }
 
-    const serviceToken = {
-      iss: issuer,
-      clientId,
-      platformContext,
-    } as unknown as IdToken;
-
-    // Ltijs supports `pages: false` to retrieve every page, although its bundled
-    // TypeScript declaration currently only permits numbers.
-    const members = await lti.NamesAndRoles.getMembers(serviceToken, {
-      pages: false as unknown as number,
-    });
+    const members = await launchContext.namesAndRoles.getMembers({ pages: false });
 
     return res.json(members);
   } catch (error) {
