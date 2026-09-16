@@ -1,5 +1,4 @@
 import express, { Request, Response } from 'express';
-import { Provider as lti } from 'ltijs';
 import { sendError } from '../errors';
 import { LtiLaunchPayload } from '../types';
 
@@ -9,8 +8,12 @@ export const MemberRoute = express.Router();
  * Retrieves token information
  */
 MemberRoute.get('/info', async (_req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid Lti token', 403);
+  }
+
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
 
   const context = token.platformContext;
 
@@ -45,11 +48,11 @@ MemberRoute.get('/info', async (_req: Request, res: Response) => {
 });
 
 MemberRoute.get('/members', async (req: Request, res: Response) => {
-  const token = res.locals.token;
-  if (!token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return sendError(res, 'Invalid Lti token', 403);
   }
-  const members = await lti.NamesAndRoles.getMembers(token);
+  const members = await launchContext.namesAndRoles.getMembers();
   return res.json(members);
 
   // if (result) {

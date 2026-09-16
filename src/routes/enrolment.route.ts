@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { Provider as lti } from 'ltijs';
 import { Config } from '../config';
 import { sendError } from '../errors';
 import UnitLink from '../schema/unitLink.model';
@@ -12,8 +11,12 @@ export const EnrolmentRouter = express.Router();
  * Enrols an LMS user into the linked OnTrack Unit
  */
 EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid token', 403);
+  }
+
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
   // Has our context been linked to an OnTrack unit?
@@ -22,11 +25,7 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
     return sendError(res, 'Unit link not found', 404);
   }
 
-  if (!_token) {
-    return sendError(res, 'Invalid token', 403);
-  }
-
-  const members = await lti.NamesAndRoles.getMembers(_token);
+  const members = await launchContext.namesAndRoles.getMembers();
   if (!members) {
     return res.status(400);
   }
@@ -67,8 +66,12 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
  * Enrols a list of LMS users into the linked OnTrack Unit
  */
 EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid token', 403);
+  }
+
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
   // Has our context been linked to an OnTrack unit?
@@ -77,12 +80,12 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
     return sendError(res, 'Unit link not found', 404);
   }
 
-  const members = await lti.NamesAndRoles.getMembers(_token!);
+  const members = await launchContext.namesAndRoles.getMembers();
   if (!members) {
     return sendError(res, 'Could not retrieve member information', 404);
   }
 
-  const member = members.members.find((m) => m.user_id === token.user);
+  const member = members.members.find((m) => m.userId === token.user);
 
   const newToken = {
     unit_id: link?.unitId,

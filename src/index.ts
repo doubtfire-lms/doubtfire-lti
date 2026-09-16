@@ -1,18 +1,13 @@
-import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { IdToken, Provider as lti } from 'ltijs';
+import { HttpError, IdTokenValidationMethod } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
-import {
-  LTI_SESSION_COOKIE,
-  installLtiSessionMiddleware,
-  ltiSessionCookieOptions,
-} from './lti-session';
-import { installLtiRateLimits } from './rate-limit';
+import { lti, ltiHttpHandler } from './lti-provider';
+import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
-import { INTERNAL_SYNC_ROUTE_PATH, InternalSyncRoute } from './routes/internal-sync.route';
+import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
 import { LtiLaunchPayload } from './types';
@@ -60,39 +55,12 @@ function railsErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function installServerMiddleware(app: express.Express): void {
-  installLtiRateLimits(app);
-  installLtiSessionMiddleware(app);
-}
-
-lti.setup(
-  Config.LTI_KEY,
-  {
-    url: `mongodb://${Config.DB_HOST}/${Config.DB_NAME}?authSource=admin`,
-    connection:
-      Config.DB_USER && Config.DB_PASS ? { user: Config.DB_USER, pass: Config.DB_PASS } : undefined,
-  },
-  {
-    appUrl: '/lti/api/',
-    loginUrl: '/lti/api/login',
-    keysetUrl: '/lti/api/keys',
-    // Disable Ltijs' permissive CORS; our middleware restricts credentials to APP_HOST.
-    cors: false,
-    serverAddon: installServerMiddleware,
-    cookies: {
-      // Set secure to true if the testing platform is in a different domain and https is being used
-      secure: Config.LTI_COOKIES_SECURE,
-      // Set sameSite to 'None' if the testing platform is in a different domain and https is being used
-      sameSite: Config.LTI_COOKIES_SAMESITE,
-    },
-    // Set DevMode to true if the testing platform is in a different domain and https is not being used
-    devMode: !Config.IS_PRODUCTION,
-  },
-);
-
 // When receiving successful LTI launch redirects to app
-lti.onConnect((_token: IdToken, req: Request, res: Response) => {
-  const token = _token as unknown as LtiLaunchPayload;
+lti.onResourceLink(async (launchContext, _request, response) => {
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
+
+  const moodleGroupIds = launchContext.idToken.launch.custom?.moodle_group_ids;
+  console.log('Moodle group IDs:', typeof moodleGroupIds === 'string' ? moodleGroupIds : '');
 
   const context = token.platformContext?.context;
   if (context && context.id && context.label && context.title) {
@@ -100,124 +68,128 @@ lti.onConnect((_token: IdToken, req: Request, res: Response) => {
     console.log(context.type);
   }
 
-  lti.NamesAndRoles.getMembers(_token!)
-    .then((members) => {
-      if (!members) {
-        return sendError(res, 'Could not retrieve member information', 400);
-      }
-      const member = members.members.find((m) => m.user_id === token.user);
-      if (!member) {
-        return sendError(res, 'Could not retrieve member information', 400);
-      }
-      const newToken = {
-        member: member,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
-        jti: crypto.randomUUID(),
-      };
-      const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
+  let members;
+  try {
+    members = await launchContext.namesAndRoles.getMembers();
+  } catch (error) {
+    return void sendError(
+      response,
+      'Failed to get member information. Ensure our public Keyset URL is accessible from your platform.',
+      error instanceof HttpError && error.status ? error.status : 502,
+    );
+  }
 
-      // Create user and generate one-time auth token for the user to sign in with
-      const authUrl = `${Config.API_HOST}/api/auth/lti`;
-      console.info(JSON.stringify({ event: 'rails_authentication_request', url: authUrl }));
+  const member = members.members.find((candidate) => candidate.userId === token.user);
+  if (!member) {
+    return void sendError(response, 'Could not retrieve member information', 400);
+  }
 
-      fetch(authUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ltik: signedToken,
-        }),
-      })
-        .then(async (response) => {
-          const responseBody = parseResponseBody(await response.text());
-          if (!response.ok) {
-            throw new RailsAuthenticationError(
-              railsErrorMessage(
-                responseBody,
-                `Rails authentication failed with ${response.status} ${response.statusText}`,
-              ),
-              response.status,
-              response.status,
-              responseBody,
-            );
-          }
+  const newToken = {
+    member,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
+    jti: crypto.randomUUID(),
+  };
+  const signedToken = jwt.sign(newToken, Config.LTI_SHARED_API_SECRET);
 
-          const auth = responseBody as Partial<AuthResponse> | null;
-          if (!auth || typeof auth !== 'object' || !auth.auth_token || !auth.username) {
-            throw new RailsAuthenticationError(
-              'Rails authentication response did not include user credentials',
-              502,
-              response.status,
-              responseBody,
-            );
-          }
+  // Create user and generate one-time auth token for the user to sign in with.
+  const authUrl = `${Config.API_HOST}/api/auth/lti`;
+  console.info(JSON.stringify({ event: 'rails_authentication_request', url: authUrl }));
 
-          console.info(
-            JSON.stringify({
-              event: 'rails_authentication_response',
-              url: authUrl,
-              status: response.status,
-            }),
-          );
-          // Do not log the successful response body because it contains an authentication token.
-          return auth as AuthResponse;
-        })
-        .then((auth) => {
-          res.cookie(LTI_SESSION_COOKIE, res.locals.ltik, ltiSessionCookieOptions);
-
-          const signInUrl = new URL('/sign_in', Config.APP_HOST);
-          signInUrl.searchParams.set('authToken', auth.auth_token);
-          signInUrl.searchParams.set('username', auth.username);
-          signInUrl.searchParams.set('isLtiLogin', 'true');
-          res.redirect(signInUrl.toString());
-        })
-        .catch((error) => {
-          const authenticationError =
-            error instanceof RailsAuthenticationError
-              ? error
-              : new RailsAuthenticationError(
-                  error instanceof Error ? error.message : String(error),
-                  502,
-                  null,
-                  null,
-                );
-
-          console.error(
-            JSON.stringify({
-              event: 'rails_authentication_failure',
-              url: authUrl,
-              status: authenticationError.status,
-              railsStatus: authenticationError.railsStatus,
-              responseBody: authenticationError.responseBody,
-              error: authenticationError.message,
-            }),
-          );
-
-          return sendError(res, authenticationError.message, authenticationError.status);
-        });
-    })
-    .catch((error) => {
-      return sendError(
-        res,
-        'Failed to get member information. Ensure our public Keyset URL is accessible from your platform.',
-        error.status,
-      );
+  try {
+    const railsResponse = await fetch(authUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ltik: signedToken,
+      }),
     });
+    const responseBody = parseResponseBody(await railsResponse.text());
+    if (!railsResponse.ok) {
+      throw new RailsAuthenticationError(
+        railsErrorMessage(
+          responseBody,
+          `Rails authentication failed with ${railsResponse.status} ${railsResponse.statusText}`,
+        ),
+        railsResponse.status,
+        railsResponse.status,
+        responseBody,
+      );
+    }
+
+    const auth = responseBody as Partial<AuthResponse> | null;
+    if (!auth || typeof auth !== 'object' || !auth.auth_token || !auth.username) {
+      throw new RailsAuthenticationError(
+        'Rails authentication response did not include user credentials',
+        502,
+        railsResponse.status,
+        responseBody,
+      );
+    }
+
+    console.info(
+      JSON.stringify({
+        event: 'rails_authentication_response',
+        url: authUrl,
+        status: railsResponse.status,
+      }),
+    );
+
+    const sessionUrl = new URL('/lti/api/session', Config.APP_HOST);
+    sessionUrl.searchParams.set('authToken', auth.auth_token);
+    sessionUrl.searchParams.set('username', auth.username);
+    launchContext.redirect(response, sessionUrl.toString());
+  } catch (error) {
+    const authenticationError =
+      error instanceof RailsAuthenticationError
+        ? error
+        : new RailsAuthenticationError(
+            error instanceof Error ? error.message : String(error),
+            502,
+            null,
+            null,
+          );
+
+    console.error(
+      JSON.stringify({
+        event: 'rails_authentication_failure',
+        url: authUrl,
+        status: authenticationError.status,
+        railsStatus: authenticationError.railsStatus,
+        responseBody: authenticationError.responseBody,
+        error: authenticationError.message,
+      }),
+    );
+
+    return void sendError(response, authenticationError.message, authenticationError.status);
+  }
 });
 
-// app.set('trust proxy', true);
+ltiHttpHandler.app.get('/lti/api/session', async (req, res) => {
+  const ltik = req.query.ltik;
+  const authToken = req.query.authToken;
+  const username = req.query.username;
 
-const ltiRouter = express.Router();
+  if (typeof ltik !== 'string' || typeof authToken !== 'string' || typeof username !== 'string') {
+    return sendError(res, 'Invalid LTI session handoff', 400);
+  }
 
-lti.app.use(express.urlencoded({ extended: true }));
-ltiRouter.use(express.urlencoded({ extended: true }));
-ltiRouter.use(express.json());
-lti.app.use(express.json());
+  try {
+    await lti.getLaunchContext(ltik);
+  } catch {
+    return sendError(res, 'Invalid or expired LTI session', 401);
+  }
 
-// This backend-only diagnostic route is disabled unless INTERNAL_SYNC_KEY is configured.
-lti.whitelist({ route: INTERNAL_SYNC_ROUTE_PATH, method: 'POST' });
+  res.cookie(LTI_SESSION_COOKIE, ltik, ltiSessionCookieOptions);
+
+  const signInUrl = new URL('/sign_in', Config.APP_HOST);
+  signInUrl.searchParams.set('authToken', authToken);
+  signInUrl.searchParams.set('username', username);
+  signInUrl.searchParams.set('isLtiLogin', 'true');
+  return res.redirect(signInUrl.toString());
+});
 
 const setup = async () => {
   console.log(
@@ -236,25 +208,43 @@ const setup = async () => {
     console.error(`MongoDB Connection Failed: ${error}`);
   }
 
-  await lti.deploy({ port: Number(Config.PORT) });
+  await lti.listen();
 
-  await lti.registerPlatform({
-    url: Config.PLATFORM_URL,
-    name: Config.PLATFORM_NAME,
-    clientId: Config.PLATFORM_CLIENT_ID,
-    authenticationEndpoint: Config.PLATFORM_AUTHENTICATION_ENDPOINT,
-    accesstokenEndpoint: Config.PLATFORM_ACCESS_TOKEN_ENDPOINT,
-    authConfig: {
-      method: Config.PLATFORM_AUTHCONFIG_METHOD,
-      key: Config.PLATFORM_AUTHCONFIG_KEY,
-    },
-  });
+  const existingPlatform = await lti.platformManager.getPlatformByUrlAndClientId(
+    Config.PLATFORM_URL,
+    Config.PLATFORM_CLIENT_ID,
+  );
+  if (!existingPlatform) {
+    const validationMethods: Record<string, IdTokenValidationMethod> = {
+      RSA_KEY: IdTokenValidationMethod.RsaKey,
+      JWK_KEY: IdTokenValidationMethod.JwkKey,
+      JWK_SET: IdTokenValidationMethod.JwkSet,
+    };
+    const validationMethod = validationMethods[Config.PLATFORM_AUTHCONFIG_METHOD];
+    if (!validationMethod) {
+      throw new Error(
+        `Unsupported PLATFORM_AUTHCONFIG_METHOD: ${Config.PLATFORM_AUTHCONFIG_METHOD}`,
+      );
+    }
+
+    await lti.platformManager.registerPlatform({
+      url: Config.PLATFORM_URL,
+      name: Config.PLATFORM_NAME,
+      clientId: Config.PLATFORM_CLIENT_ID,
+      authenticationEndpoint: Config.PLATFORM_AUTHENTICATION_ENDPOINT,
+      accessTokenEndpoint: Config.PLATFORM_ACCESS_TOKEN_ENDPOINT,
+      idTokenValidation: {
+        method: validationMethod,
+        key: Config.PLATFORM_AUTHCONFIG_KEY,
+      },
+    });
+  }
 };
 
-lti.app.use('/lti/api', GradeRouter);
-lti.app.use('/lti/api', EnrolmentRouter);
-lti.app.use('/lti/api', UnitLinkRouter);
-lti.app.use('/lti/api', MemberRoute);
-lti.app.use('/lti/api', InternalSyncRoute);
+ltiHttpHandler.app.use('/lti/api', GradeRouter);
+ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
+ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
+ltiHttpHandler.app.use('/lti/api', MemberRoute);
+ltiHttpHandler.app.use('/lti/api', InternalSyncRoute);
 
 setup();

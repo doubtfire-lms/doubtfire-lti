@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { RetrievedGrade, Provider as lti } from 'ltijs';
+import type { Result, Score } from 'ltijs';
 import { Config } from '../config';
 import { sendError } from '../errors';
 import UnitLink from '../schema/unitLink.model';
@@ -12,12 +12,12 @@ export const GradeRouter = express.Router();
  * Sync grades for all members in the context
  */
 GradeRouter.post('/grades', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return sendError(res, 'Invalid Lti Token', 400);
   }
 
-  const token = _token as unknown as LtiLaunchPayload;
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
   const link = await UnitLink.findOne({ contextId });
@@ -25,7 +25,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     return sendError(res, 'No unit is linked to this course', 404);
   }
 
-  const members = await lti.NamesAndRoles.getMembers(_token);
+  const members = await launchContext.namesAndRoles.getMembers();
   if (!members) {
     return sendError(res, 'Unable to retrieve members', 400);
   }
@@ -65,8 +65,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   let lineItemId = token.platformContext?.endpoint?.lineitem; // Attempting to retrieve it from idtoken
 
   if (!lineItemId) {
-    // @ts-expect-error Outdated ltis @types.
-    const response = await lti.Grade.getLineItems(_token, { resourceLinkId: true });
+    const response = await launchContext.grading.getLineItems({ resourceLinkId: true });
     const lineItems = response.lineItems;
     if (lineItems.length === 0) {
       // Creating line item if there is none
@@ -75,13 +74,16 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
         label: 'Grade',
         tag: 'grade',
         resourceLinkId: token.platformContext?.resource?.id,
-        activityProgress: 'Completed',
-        gradingProgress: 'FullyGraded',
       };
-      // @ts-expect-error Outdated ltis @types.
-      const lineItem = await lti.Grade.createLineItem(_token, newLineItem);
+      const lineItem = await launchContext.grading.createLineItem(newLineItem, {
+        resourceLinkId: true,
+      });
       lineItemId = lineItem.id;
-    } else lineItemId = lineItems[0].id;
+    } else lineItemId = lineItems[0]?.id;
+  }
+
+  if (!lineItemId) {
+    return sendError(res, 'Unable to find or create a grade line item', 400);
   }
 
   const gradesSynced: {
@@ -94,7 +96,10 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     ignored: [],
   };
   for (const user of members.members) {
-    if (data[user.email] === null || data[user.email] === undefined) {
+    const email = typeof user.email === 'string' ? user.email : undefined;
+    const grade = email ? data[email] : undefined;
+
+    if (grade === null || grade === undefined) {
       gradesSynced.ignored.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: 'Project not found',
@@ -102,7 +107,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       continue;
     }
 
-    if (data[user.email] === -1) {
+    if (grade === -1) {
       gradesSynced.errors.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: 'No permission to retrieve grade',
@@ -110,7 +115,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       continue;
     }
 
-    if (data[user.email] === 0) {
+    if (grade === 0) {
       gradesSynced.ignored.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: 'No grades found',
@@ -119,21 +124,20 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     }
 
     try {
-      const gradeObj = {
+      const gradeObj: Score = {
         // userId: token.user,
-        userId: user.user_id,
-        scoreGiven: data[user.email],
+        userId: user.userId,
+        scoreGiven: grade,
         scoreMaximum: 100,
         activityProgress: 'Completed',
         gradingProgress: 'FullyGraded',
       };
       // Sending Grade
-      // @ts-expect-error Outdated ltis @types.
-      const responseGrade = await lti.Grade.submitScore(_token, lineItemId, gradeObj);
+      const responseGrade = await launchContext.grading.submitScore(lineItemId, gradeObj);
       if (responseGrade) {
         gradesSynced.success.push({
           row: JSON.stringify(user).replaceAll('\\', ''),
-          message: `Grade synced: ${data[user.email]}%`,
+          message: `Grade synced: ${grade}%`,
         });
       }
     } catch (e) {
@@ -152,22 +156,31 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
  * Retrieves the grade for a context member
  */
 GradeRouter.get('/grade', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  if (!_token) {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
     return res.status(403);
   }
 
-  const token = _token as unknown as LtiLaunchPayload;
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
+  let lineItemId = token.platformContext?.endpoint?.lineitem;
 
-  const response = await lti.Grade.result(_token);
-  if (!response) {
+  if (!lineItemId) {
+    const { lineItems } = await launchContext.grading.getLineItems({ resourceLinkId: true });
+    lineItemId = lineItems[0]?.id;
+  }
+
+  if (!lineItemId) {
+    return res.status(404).send();
+  }
+
+  const response = await launchContext.grading.getScores(lineItemId, {
+    userId: token.user,
+  });
+  if (!response.scores.length) {
     return res.status(404);
   }
 
-  // @ts-expect-error Outdated ltis @types.
-  const result = response[0]?.results
-    //
-    .find((r: RetrievedGrade) => r.userId === token.user);
+  const result = response.scores.find((score: Result) => score.userId === token.user);
 
   res.json(result);
 });
