@@ -11,13 +11,16 @@ export const UnitLinkRouter = express.Router();
  * Retrieves linked unit information for a context
  */
 UnitLinkRouter.get('/link', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid Lti token', 403);
+  }
 
   // const contextId = req.query.contextId;
-  const token = _token as unknown as LtiLaunchPayload;
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
   const link = await UnitLink.findOne({ contextId });
-  res.json(link);
+  return res.json(link);
 });
 
 /*
@@ -25,8 +28,12 @@ UnitLinkRouter.get('/link', async (req: Request, res: Response) => {
  */
 UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
   const { unitId } = req.body;
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid Lti token', 403);
+  }
+
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
   const newToken = {
@@ -68,8 +75,12 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
  * Removes link between a unit and the LMS context
  */
 UnitLinkRouter.delete('/link', async (req: Request, res: Response) => {
-  const _token = res.locals.token;
-  const token = _token as unknown as LtiLaunchPayload;
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid Lti token', 403);
+  }
+
+  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
   const contextId = token.platformContext?.context?.id;
 
   const link = await UnitLink.findOne({ contextId });
