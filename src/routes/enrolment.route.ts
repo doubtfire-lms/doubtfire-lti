@@ -2,8 +2,8 @@ import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Config } from '../config';
 import { sendError } from '../errors';
+import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
-import { LtiLaunchPayload } from '../types';
 
 export const EnrolmentRouter = express.Router();
 
@@ -16,8 +16,10 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid token', 403);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   // Has our context been linked to an OnTrack unit?
   const link = await UnitLink.findOne({ contextId });
@@ -71,8 +73,10 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid token', 403);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   // Has our context been linked to an OnTrack unit?
   const link = await UnitLink.findOne({ contextId });
@@ -85,7 +89,7 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
     return sendError(res, 'Could not retrieve member information', 404);
   }
 
-  const member = members.members.find((m) => m.userId === token.user);
+  const member = members.members.find((m) => m.userId === launchContext.idToken.user.id);
 
   const newToken = {
     unit_id: link?.unitId,

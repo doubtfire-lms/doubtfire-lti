@@ -2,8 +2,8 @@ import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Config } from '../config';
 import { sendError } from '../errors';
+import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
-import { LtiLaunchPayload } from '../types';
 
 export const UnitLinkRouter = express.Router();
 
@@ -16,9 +16,11 @@ UnitLinkRouter.get('/link', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid Lti token', 403);
   }
 
-  // const contextId = req.query.contextId;
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
+
   const link = await UnitLink.findOne({ contextId });
   return res.json(link);
 });
@@ -33,8 +35,10 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid Lti token', 403);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   const newToken = {
     unit_id: unitId,
@@ -80,8 +84,10 @@ UnitLinkRouter.delete('/link', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid Lti token', 403);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   const link = await UnitLink.findOne({ contextId });
   if (!link) {

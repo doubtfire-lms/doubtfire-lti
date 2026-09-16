@@ -3,6 +3,7 @@ import { HttpError, IdTokenValidationMethod } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
+import { stringArrayClaim, stringClaim } from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
 import { EnrolmentRouter } from './routes/enrolment.route';
@@ -10,7 +11,6 @@ import { GradeRouter } from './routes/grade.route';
 import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
-import { LtiLaunchPayload } from './types';
 
 interface AuthResponse {
   username: string;
@@ -57,15 +57,15 @@ function railsErrorMessage(body: unknown, fallback: string): string {
 
 // When receiving successful LTI launch redirects to app
 lti.onResourceLink(async (launchContext, _request, response) => {
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-
   const moodleGroupIds = launchContext.idToken.launch.custom?.moodle_group_ids;
   console.log('Moodle group IDs:', typeof moodleGroupIds === 'string' ? moodleGroupIds : '');
 
-  const context = token.platformContext?.context;
-  if (context && context.id && context.label && context.title) {
-    console.log(`Context is ${context.label} - ${context.title}`);
-    console.log(context.type);
+  const context = launchContext.idToken.launch.context;
+  const contextLabel = stringClaim(context, 'label');
+  const contextTitle = stringClaim(context, 'title');
+  if (contextLabel && contextTitle) {
+    console.log(`Context is ${contextLabel} - ${contextTitle}`);
+    console.log(stringArrayClaim(context, 'type'));
   }
 
   let members;
@@ -79,7 +79,9 @@ lti.onResourceLink(async (launchContext, _request, response) => {
     );
   }
 
-  const member = members.members.find((candidate) => candidate.userId === token.user);
+  const member = members.members.find(
+    (candidate) => candidate.userId === launchContext.idToken.user.id,
+  );
   if (!member) {
     return void sendError(response, 'Could not retrieve member information', 400);
   }

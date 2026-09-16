@@ -3,8 +3,8 @@ import jwt from 'jsonwebtoken';
 import type { Result, Score } from 'ltijs';
 import { Config } from '../config';
 import { sendError } from '../errors';
+import { ltiContextId, ltiResourceId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
-import { LtiLaunchPayload } from '../types';
 
 export const GradeRouter = express.Router();
 
@@ -17,8 +17,10 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     return sendError(res, 'Invalid Lti Token', 400);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  const contextId = token.platformContext?.context?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
 
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
@@ -62,7 +64,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     return sendError(res, 'Failed to retrieve grades', 404);
   }
 
-  let lineItemId = token.platformContext?.endpoint?.lineitem; // Attempting to retrieve it from idtoken
+  let lineItemId = launchContext.idToken.services.assignmentAndGrades.lineItemId;
 
   if (!lineItemId) {
     const response = await launchContext.grading.getLineItems({ resourceLinkId: true });
@@ -73,7 +75,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
         scoreMaximum: 100,
         label: 'Grade',
         tag: 'grade',
-        resourceLinkId: token.platformContext?.resource?.id,
+        resourceLinkId: ltiResourceId(launchContext),
       };
       const lineItem = await launchContext.grading.createLineItem(newLineItem, {
         resourceLinkId: true,
@@ -161,8 +163,7 @@ GradeRouter.get('/grade', async (req: Request, res: Response) => {
     return res.status(403);
   }
 
-  const token = launchContext.legacyIdToken as unknown as LtiLaunchPayload;
-  let lineItemId = token.platformContext?.endpoint?.lineitem;
+  let lineItemId = launchContext.idToken.services.assignmentAndGrades.lineItemId;
 
   if (!lineItemId) {
     const { lineItems } = await launchContext.grading.getLineItems({ resourceLinkId: true });
@@ -174,13 +175,15 @@ GradeRouter.get('/grade', async (req: Request, res: Response) => {
   }
 
   const response = await launchContext.grading.getScores(lineItemId, {
-    userId: token.user,
+    userId: launchContext.idToken.user.id,
   });
   if (!response.scores.length) {
     return res.status(404);
   }
 
-  const result = response.scores.find((score: Result) => score.userId === token.user);
+  const result = response.scores.find(
+    (score: Result) => score.userId === launchContext.idToken.user.id,
+  );
 
   res.json(result);
 });
