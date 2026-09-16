@@ -4,6 +4,12 @@ import { Config } from '../config';
 import { sendError } from '../errors';
 import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
+import {
+  createGradeLineItem,
+  findGradeLineItem,
+  findStoredGradeLineItem,
+  gradeLineItemErrorStatus,
+} from '../services/grade-line-item.service';
 
 export const UnitLinkRouter = express.Router();
 
@@ -23,6 +29,51 @@ UnitLinkRouter.get('/link', async (req: Request, res: Response) => {
 
   const link = await UnitLink.findOne({ contextId });
   return res.json(link);
+});
+
+/*
+ * Validates the grade line item saved when the unit was linked.
+ * Moodle does not expose grade-item visibility through LTI AGS.
+ */
+UnitLinkRouter.get('/grade-line-item', async (_req: Request, res: Response) => {
+  const launchContext = res.locals.launchContext;
+  if (!launchContext) {
+    return sendError(res, 'Invalid Lti token', 403);
+  }
+
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
+  }
+
+  const link = await UnitLink.findOne({ contextId });
+  if (!link?.lineItemId) {
+    return res.json({ configured: false, visibility: 'unknown' });
+  }
+
+  try {
+    const lineItem = await findStoredGradeLineItem(launchContext, link.lineItemId);
+    if (!lineItem?.id) {
+      return res.json({ configured: false, visibility: 'unknown' });
+    }
+
+    return res.json({
+      configured: true,
+      visibility: 'unknown',
+      lineItem: {
+        id: lineItem.id,
+        label: lineItem.label,
+        scoreMaximum: lineItem.scoreMaximum,
+      },
+    });
+  } catch (error) {
+    console.error('Unable to validate the linked Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
+  }
 });
 
 /*
@@ -66,10 +117,27 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
     return sendError(res, errorBody, response.status);
   }
 
+  let lineItemId: string;
+  try {
+    const lineItem =
+      (await findGradeLineItem(launchContext)) ?? (await createGradeLineItem(launchContext));
+    if (!lineItem.id) {
+      return sendError(res, 'Moodle returned a grade line item without an ID', 502);
+    }
+    lineItemId = lineItem.id;
+  } catch (error) {
+    console.error('Unable to create or resolve the Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to create or resolve the Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
+  }
+
   // Current OnTrack user has permissions to enrol students into requested unit_id
   const result = await UnitLink.findOneAndUpdate(
     { contextId },
-    { unitId },
+    { unitId, lineItemId },
     { upsert: true, new: true },
   );
   res.json(result);

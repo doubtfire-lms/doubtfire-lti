@@ -3,8 +3,12 @@ import jwt from 'jsonwebtoken';
 import type { Result, Score } from 'ltijs';
 import { Config } from '../config';
 import { sendError } from '../errors';
-import { ltiContextId, ltiResourceId } from '../lti-claims';
+import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
+import {
+  findStoredGradeLineItem,
+  gradeLineItemErrorStatus,
+} from '../services/grade-line-item.service';
 
 export const GradeRouter = express.Router();
 
@@ -25,6 +29,34 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   const link = await UnitLink.findOne({ contextId });
   if (!link) {
     return sendError(res, 'No unit is linked to this course', 404);
+  }
+
+  if (!link.lineItemId) {
+    return sendError(
+      res,
+      'No grade line item is linked. Unlink and link the OnTrack unit again.',
+      409,
+    );
+  }
+
+  let lineItemId: string;
+  try {
+    const lineItem = await findStoredGradeLineItem(launchContext, link.lineItemId);
+    if (!lineItem?.id) {
+      return sendError(
+        res,
+        'The linked grade line item is no longer available. Unlink and link the OnTrack unit again.',
+        409,
+      );
+    }
+    lineItemId = lineItem.id;
+  } catch (error) {
+    console.error('Unable to validate the linked Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
   }
 
   const members = await launchContext.namesAndRoles.getMembers();
@@ -64,30 +96,6 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     return sendError(res, 'Failed to retrieve grades', 404);
   }
 
-  let lineItemId = launchContext.idToken.services.assignmentAndGrades.lineItemId;
-
-  if (!lineItemId) {
-    const response = await launchContext.grading.getLineItems({ resourceLinkId: true });
-    const lineItems = response.lineItems;
-    if (lineItems.length === 0) {
-      // Creating line item if there is none
-      const newLineItem = {
-        scoreMaximum: 100,
-        label: 'Grade',
-        tag: 'grade',
-        resourceLinkId: ltiResourceId(launchContext),
-      };
-      const lineItem = await launchContext.grading.createLineItem(newLineItem, {
-        resourceLinkId: true,
-      });
-      lineItemId = lineItem.id;
-    } else lineItemId = lineItems[0]?.id;
-  }
-
-  if (!lineItemId) {
-    return sendError(res, 'Unable to find or create a grade line item', 400);
-  }
-
   const gradesSynced: {
     success: { row: string; message: string }[];
     errors: { row: string; message: string }[];
@@ -117,17 +125,8 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       continue;
     }
 
-    if (grade === 0) {
-      gradesSynced.ignored.push({
-        row: JSON.stringify(user).replaceAll('\\', ''),
-        message: 'No grades found',
-      });
-      continue;
-    }
-
     try {
       const gradeObj: Score = {
-        // userId: token.user,
         userId: user.userId,
         scoreGiven: grade,
         scoreMaximum: 100,
@@ -144,7 +143,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
       }
     } catch (e) {
       console.error(`Unable to submit scores for ${user.name}`, e);
-      gradesSynced.success.push({
+      gradesSynced.errors.push({
         row: JSON.stringify(user).replaceAll('\\', ''),
         message: `Failed to submit score`,
       });
@@ -163,15 +162,30 @@ GradeRouter.get('/grade', async (req: Request, res: Response) => {
     return res.status(403);
   }
 
-  let lineItemId = launchContext.idToken.services.assignmentAndGrades.lineItemId;
-
-  if (!lineItemId) {
-    const { lineItems } = await launchContext.grading.getLineItems({ resourceLinkId: true });
-    lineItemId = lineItems[0]?.id;
+  const contextId = ltiContextId(launchContext);
+  if (!contextId) {
+    return sendError(res, 'LTI launch does not include a context ID', 400);
   }
 
-  if (!lineItemId) {
+  const link = await UnitLink.findOne({ contextId });
+  if (!link?.lineItemId) {
     return res.status(404).send();
+  }
+
+  let lineItemId: string;
+  try {
+    const lineItem = await findStoredGradeLineItem(launchContext, link.lineItemId);
+    if (!lineItem?.id) {
+      return res.status(404).send();
+    }
+    lineItemId = lineItem.id;
+  } catch (error) {
+    console.error('Unable to validate the linked Moodle grade item', error);
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorStatus(error),
+    );
   }
 
   const response = await launchContext.grading.getScores(lineItemId, {
