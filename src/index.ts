@@ -6,6 +6,7 @@ import { sendError } from './errors';
 import { stringArrayClaim, stringClaim } from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
+import { AppHandoffRouter } from './routes/app-handoff.route';
 import { CourseDataRouter } from './routes/course-data.route';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
@@ -273,6 +274,7 @@ ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
 ltiHttpHandler.app.use('/lti/api', CourseDataRouter);
 ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
 ltiHttpHandler.app.use('/lti/api', MemberRoute);
+ltiHttpHandler.app.use('/lti/api', AppHandoffRouter);
 ltiHttpHandler.app.use('/lti/api', InternalSyncRoute);
 
 setup();
