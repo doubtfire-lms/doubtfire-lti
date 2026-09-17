@@ -15,15 +15,40 @@ class GradeLineItemError extends Error {
   }
 }
 
+const GRADE_SERVICE_SETTING_HINT =
+  "In Moodle, edit the OnTrack external tool and set 'IMS LTI Assignment and Grade Services' to 'Use this service for grade sync and column management', then relaunch OnTrack.";
+
+function oauthErrorCode(error: HttpError): string | undefined {
+  const response = error.response;
+  if (!response || typeof response !== 'object') return undefined;
+  const code = (response as Record<string, unknown>).error;
+  return typeof code === 'string' ? code : undefined;
+}
+
 export function gradeLineItemErrorStatus(error: unknown): number {
   if (error instanceof GradeLineItemError) return error.status;
+  if (error instanceof HttpError && oauthErrorCode(error)) return 422;
   return error instanceof HttpError && error.status ? error.status : 502;
+}
+
+export function gradeLineItemErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof HttpError) {
+    const code = oauthErrorCode(error);
+    if (code === 'invalid_scope') {
+      return `Moodle has not granted OnTrack permission to manage grade columns. ${GRADE_SERVICE_SETTING_HINT}`;
+    }
+    if (code) {
+      return `Moodle refused OnTrack's access token request (${code}). Check that the OnTrack tool's public keyset URL is reachable from Moodle.`;
+    }
+    return `${fallback}: Moodle responded ${error.status ?? ''} ${error.statusText ?? ''}`.trim();
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 async function getResourceLinkLineItems(launchContext: LaunchContext): Promise<LineItem[]> {
   if (!launchContext.grading.isAvailable()) {
     throw new GradeLineItemError(
-      'Assignment and Grade Services are unavailable for this launch',
+      `Assignment and Grade Services are unavailable for this launch. ${GRADE_SERVICE_SETTING_HINT}`,
       422,
     );
   }
@@ -67,7 +92,7 @@ export async function findGradeLineItem(
 ): Promise<LineItem | undefined> {
   if (!launchContext.grading.isAvailable()) {
     throw new GradeLineItemError(
-      'Assignment and Grade Services are unavailable for this launch',
+      `Assignment and Grade Services are unavailable for this launch. ${GRADE_SERVICE_SETTING_HINT}`,
       422,
     );
   }

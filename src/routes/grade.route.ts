@@ -7,6 +7,7 @@ import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
 import {
   findStoredGradeLineItem,
+  gradeLineItemErrorMessage,
   gradeLineItemErrorStatus,
 } from '../services/grade-line-item.service';
 
@@ -54,7 +55,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     console.error('Unable to validate the linked Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to validate the linked Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }
@@ -183,7 +184,7 @@ GradeRouter.get('/grade', async (req: Request, res: Response) => {
     console.error('Unable to validate the linked Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to validate the linked Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }

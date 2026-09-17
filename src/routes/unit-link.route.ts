@@ -8,6 +8,7 @@ import {
   createGradeLineItem,
   findGradeLineItem,
   findStoredGradeLineItem,
+  gradeLineItemErrorMessage,
   gradeLineItemErrorStatus,
 } from '../services/grade-line-item.service';
 
@@ -70,7 +71,7 @@ UnitLinkRouter.get('/grade-line-item', async (_req: Request, res: Response) => {
     console.error('Unable to validate the linked Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to validate the linked Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }
@@ -129,7 +130,7 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
     console.error('Unable to create or resolve the Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to create or resolve the Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to create or resolve the Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }
