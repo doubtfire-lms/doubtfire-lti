@@ -14,6 +14,10 @@ const publicLtiPaths = new Set([
   '/lti/api/keys',
   '/lti/api/session',
 ]);
+const internalLtiPaths = new Set([
+  '/lti/api/internal/test-members',
+  '/lti/api/internal/course-data',
+]);
 
 declare module 'express-serve-static-core' {
   interface Locals {
@@ -25,7 +29,7 @@ function isProtectedBrowserRoute(req: Request): boolean {
   return (
     req.path.startsWith('/lti/api/') &&
     !publicLtiPaths.has(req.path) &&
-    req.path !== '/lti/api/internal/test-members'
+    !internalLtiPaths.has(req.path)
   );
 }
 

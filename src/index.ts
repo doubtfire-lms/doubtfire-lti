@@ -6,11 +6,17 @@ import { sendError } from './errors';
 import { stringArrayClaim, stringClaim } from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
+import { CourseDataRouter } from './routes/course-data.route';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
 import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
+import {
+  MoodleCourseDataServiceError,
+  getMoodleCourseData,
+  rememberMoodleCourseConnection,
+} from './services/moodle-course-data.service';
 
 interface AuthResponse {
   username: string;
@@ -57,15 +63,34 @@ function railsErrorMessage(body: unknown, fallback: string): string {
 
 // When receiving successful LTI launch redirects to app
 lti.onResourceLink(async (launchContext, _request, response) => {
-  const moodleGroupIds = launchContext.idToken.launch.custom?.moodle_group_ids;
-  console.log('Moodle group IDs:', typeof moodleGroupIds === 'string' ? moodleGroupIds : '');
-
   const context = launchContext.idToken.launch.context;
   const contextLabel = stringClaim(context, 'label');
   const contextTitle = stringClaim(context, 'title');
   if (contextLabel && contextTitle) {
     console.log(`Context is ${contextLabel} - ${contextTitle}`);
     console.log(stringArrayClaim(context, 'type'));
+  }
+
+  try {
+    const connection = await rememberMoodleCourseConnection(launchContext);
+    const snapshot = await getMoodleCourseData(launchContext);
+    connection.lastFetchedAt = new Date();
+    await connection.save();
+    console.info(
+      JSON.stringify({
+        event: 'moodle_course_data_snapshot',
+        contextId: snapshot.context.id,
+        snapshot,
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: 'moodle_course_data_fetch_failure',
+        status: error instanceof MoodleCourseDataServiceError ? error.status : 502,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 
   let members;
@@ -245,6 +270,7 @@ const setup = async () => {
 
 ltiHttpHandler.app.use('/lti/api', GradeRouter);
 ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
+ltiHttpHandler.app.use('/lti/api', CourseDataRouter);
 ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
 ltiHttpHandler.app.use('/lti/api', MemberRoute);
 ltiHttpHandler.app.use('/lti/api', InternalSyncRoute);
