@@ -1,8 +1,11 @@
-import jwt from 'jsonwebtoken';
 import type { LaunchContext, Platform } from 'ltijs';
-import crypto from 'node:crypto';
-import { ltiContextId, stringClaim } from '../lti-claims';
-import MoodleCourseConnection from '../schema/moodleCourseConnection.model';
+import { stringClaim } from '../lti-claims';
+import {
+  LtiServiceError,
+  getPlatformAccessToken,
+  platformErrorStatus,
+  platformUrl,
+} from './platform-access.service';
 
 export const MOODLE_COURSE_DATA_URL_CLAIM = 'ontrack_course_data_url';
 export const MOODLE_COURSE_DATA_SCOPE_CLAIM = 'ontrack_course_data_scope';
@@ -17,8 +20,6 @@ export interface MoodleCourseDataRequest {
   assignmentId?: string;
   include?: readonly MoodleCourseDataSection[];
 }
-
-const CLIENT_ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 
 export interface MoodleCourseUserRole {
   id: string;
@@ -113,25 +114,9 @@ export interface MoodleCourseDataSnapshot {
   assignments?: MoodleCourseAssignment[];
 }
 
-interface AccessTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
 export interface CourseDataConfiguration {
   endpoint: URL;
   scope: string;
-}
-
-export class MoodleCourseDataServiceError extends Error {
-  constructor(
-    message: string,
-    readonly status = 502,
-  ) {
-    super(message);
-    this.name = 'MoodleCourseDataServiceError';
-  }
 }
 
 export function courseDataSectionsFrom(value: unknown): MoodleCourseDataSection[] | undefined {
@@ -151,7 +136,7 @@ export function courseDataSectionsFrom(value: unknown): MoodleCourseDataSection[
       (section) => !MOODLE_COURSE_DATA_SECTIONS.includes(section as MoodleCourseDataSection),
     )
   ) {
-    throw new MoodleCourseDataServiceError(
+    throw new LtiServiceError(
       'include must contain unique values from users, groups, assignments',
       400,
     );
@@ -202,18 +187,14 @@ function isCourseAssignment(value: unknown): value is MoodleCourseAssignment {
 
 function parseSnapshot(value: unknown, request: MoodleCourseDataRequest): MoodleCourseDataSnapshot {
   if (!isObject(value) || value.version !== '2' || !isObject(value.context)) {
-    throw new MoodleCourseDataServiceError(
-      'Moodle returned an invalid OnTrack course-data response',
-    );
+    throw new LtiServiceError('Moodle returned an invalid OnTrack course-data response');
   }
   if (
     !hasString(value.context, 'id') ||
     !hasString(value.context, 'label') ||
     !hasString(value.context, 'title')
   ) {
-    throw new MoodleCourseDataServiceError(
-      'Moodle returned an invalid OnTrack course-data response',
-    );
+    throw new LtiServiceError('Moodle returned an invalid OnTrack course-data response');
   }
 
   const included = request.include ?? MOODLE_COURSE_DATA_SECTIONS;
@@ -225,32 +206,10 @@ function parseSnapshot(value: unknown, request: MoodleCourseDataRequest): Moodle
     return sectionValue.every(isCourseAssignment);
   });
   if (!validSections) {
-    throw new MoodleCourseDataServiceError(
-      'Moodle returned an invalid OnTrack course-data response',
-    );
+    throw new LtiServiceError('Moodle returned an invalid OnTrack course-data response');
   }
 
   return value as unknown as MoodleCourseDataSnapshot;
-}
-
-function validateEndpoint(endpointValue: string, platformUrl: string): URL {
-  let endpoint: URL;
-  try {
-    endpoint = new URL(endpointValue);
-  } catch {
-    throw new MoodleCourseDataServiceError(
-      'Moodle advertised an invalid OnTrack course-data URL',
-      422,
-    );
-  }
-
-  if (endpoint.origin !== new URL(platformUrl).origin) {
-    throw new MoodleCourseDataServiceError(
-      'The Moodle OnTrack course-data URL does not match the registered platform origin',
-      422,
-    );
-  }
-  return endpoint;
 }
 
 export function courseDataConfigurationFromLaunch(
@@ -260,61 +219,19 @@ export function courseDataConfigurationFromLaunch(
   const endpointValue = stringClaim(custom, MOODLE_COURSE_DATA_URL_CLAIM);
   const scope = stringClaim(custom, MOODLE_COURSE_DATA_SCOPE_CLAIM);
   if (!endpointValue || !scope) {
-    throw new MoodleCourseDataServiceError(
+    throw new LtiServiceError(
       'The Moodle OnTrack course-data plugin is not enabled for this external tool. Enable it and perform a fresh LTI launch.',
       422,
     );
   }
   if (scope !== MOODLE_COURSE_DATA_READ_SCOPE) {
-    throw new MoodleCourseDataServiceError(
-      'Moodle advertised an unsupported OnTrack course-data scope',
-      422,
-    );
+    throw new LtiServiceError('Moodle advertised an unsupported OnTrack course-data scope', 422);
   }
 
   return {
-    endpoint: validateEndpoint(endpointValue, launchContext.platform.url),
+    endpoint: platformUrl(endpointValue, launchContext.platform, 'Moodle course-data'),
     scope,
   };
-}
-
-async function requestAccessToken(platform: Platform, scope: string): Promise<AccessTokenResponse> {
-  const assertion = jwt.sign(
-    {
-      sub: platform.clientId,
-      iss: platform.clientId,
-      aud: platform.authorizationServer,
-      jti: crypto.randomUUID(),
-    },
-    platform.keys.private,
-    {
-      algorithm: 'RS256',
-      expiresIn: 60,
-      keyid: platform.id,
-    },
-  );
-  const response = await fetch(platform.accessTokenEndpoint, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_assertion_type: CLIENT_ASSERTION_TYPE,
-      client_assertion: assertion,
-      scope,
-    }),
-  });
-  const payload = (await response.json().catch(() => null)) as Partial<AccessTokenResponse> | null;
-  if (!response.ok || !payload?.access_token || !payload.token_type || !payload.expires_in) {
-    throw new MoodleCourseDataServiceError(
-      `Moodle did not issue an access token for the OnTrack course-data scope (${response.status})`,
-      response.status >= 400 && response.status < 500 ? 422 : 502,
-    );
-  }
-
-  return payload as AccessTokenResponse;
 }
 
 export async function fetchMoodleCourseData(
@@ -323,27 +240,27 @@ export async function fetchMoodleCourseData(
   request: MoodleCourseDataRequest = {},
 ): Promise<MoodleCourseDataSnapshot> {
   if (configuration.scope !== MOODLE_COURSE_DATA_READ_SCOPE) {
-    throw new MoodleCourseDataServiceError('Stored Moodle course-data scope is unsupported', 422);
+    throw new LtiServiceError('Stored Moodle course-data scope is unsupported', 422);
   }
   if (request.assignmentId && request.include && !request.include.includes('assignments')) {
-    throw new MoodleCourseDataServiceError('assignmentId requires assignments to be included', 400);
+    throw new LtiServiceError('assignmentId requires assignments to be included', 400);
   }
-  const endpoint = validateEndpoint(configuration.endpoint.toString(), platform.url);
+  const endpoint = platformUrl(configuration.endpoint.toString(), platform, 'Moodle course-data');
   if (request.include) endpoint.searchParams.set('include', request.include.join(','));
   if (request.assignmentId) endpoint.searchParams.set('assignment_id', request.assignmentId);
 
-  const accessToken = await requestAccessToken(platform, configuration.scope);
+  const accessToken = await getPlatformAccessToken(platform, [configuration.scope]);
   const response = await fetch(endpoint, {
     headers: {
       Accept: MOODLE_COURSE_DATA_MEDIA_TYPE,
-      Authorization: `${accessToken.token_type} ${accessToken.access_token}`,
+      Authorization: accessToken.authorization,
     },
   });
   const payload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
-    throw new MoodleCourseDataServiceError(
+    throw new LtiServiceError(
       `Moodle OnTrack course-data request failed (${response.status})`,
-      response.status >= 400 && response.status < 500 ? 422 : 502,
+      platformErrorStatus(response.status),
     );
   }
 
@@ -361,62 +278,27 @@ export async function getMoodleCourseData(
   );
 }
 
-export async function rememberMoodleCourseConnection(launchContext: LaunchContext) {
-  const contextId = ltiContextId(launchContext);
-  if (!contextId) {
-    throw new MoodleCourseDataServiceError('LTI launch does not include a context ID', 400);
-  }
-  const configuration = courseDataConfigurationFromLaunch(launchContext);
-  const context = launchContext.idToken.launch.context;
-  return MoodleCourseConnection.findOneAndUpdate(
-    { contextId },
-    {
-      $set: {
-        contextLabel: stringClaim(context, 'label'),
-        contextTitle: stringClaim(context, 'title'),
-        platformId: launchContext.platform.id,
-        endpoint: configuration.endpoint.toString(),
-        scope: configuration.scope,
-      },
-    },
-    { upsert: true, new: true },
-  );
-}
-
 export async function fetchStoredMoodleCourseData(
-  connection: {
-    platformId: string;
-    endpoint: string;
-    scope: string;
+  link: {
+    platformId?: string | null;
+    courseDataEndpoint?: string | null;
+    courseDataScope?: string | null;
   },
   platform: Platform,
   request: MoodleCourseDataRequest = {},
 ): Promise<MoodleCourseDataSnapshot> {
-  if (platform.id !== connection.platformId) {
-    throw new MoodleCourseDataServiceError('Stored Moodle platform does not match the course', 422);
+  if (!link.courseDataEndpoint || !link.courseDataScope) {
+    throw new LtiServiceError(
+      'The Moodle OnTrack course-data plugin has not been detected for this course. Enable it for the external tool and relaunch OnTrack from Moodle.',
+      422,
+    );
+  }
+  if (platform.id !== link.platformId) {
+    throw new LtiServiceError('Stored Moodle platform does not match the course', 422);
   }
   return fetchMoodleCourseData(
     platform,
-    { endpoint: new URL(connection.endpoint), scope: connection.scope },
+    { endpoint: new URL(link.courseDataEndpoint), scope: link.courseDataScope },
     request,
   );
-}
-
-export function selectedAssignmentData(
-  snapshot: MoodleCourseDataSnapshot,
-  selectedAssignmentId?: string | null,
-) {
-  const assignment = selectedAssignmentId
-    ? (snapshot.assignments?.find((candidate) => candidate.id === selectedAssignmentId) ?? null)
-    : null;
-  return {
-    assignment,
-    extensions:
-      assignment?.extensions.map((extension) => ({
-        ...extension,
-        assignment_id: assignment.id,
-        assignment_name: assignment.name,
-        assignment_due_date: assignment.due_date,
-      })) ?? [],
-  };
 }

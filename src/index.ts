@@ -3,21 +3,17 @@ import { HttpError, IdTokenValidationMethod } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
-import { stringArrayClaim, stringClaim } from './lti-claims';
+import { isStaffLaunch, ltiContextId, stringArrayClaim, stringClaim } from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
 import { AppHandoffRouter } from './routes/app-handoff.route';
-import { CourseDataRouter } from './routes/course-data.route';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
 import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
-import {
-  MoodleCourseDataServiceError,
-  getMoodleCourseData,
-  rememberMoodleCourseConnection,
-} from './services/moodle-course-data.service';
+import UnitLink from './schema/unitLink.model';
+import { refreshLinkFromLaunch } from './services/lms-link.service';
 
 interface AuthResponse {
   username: string;
@@ -73,22 +69,18 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   }
 
   try {
-    const connection = await rememberMoodleCourseConnection(launchContext);
-    const snapshot = await getMoodleCourseData(launchContext);
-    connection.lastFetchedAt = new Date();
-    await connection.save();
-    console.info(
-      JSON.stringify({
-        event: 'moodle_course_data_snapshot',
-        contextId: snapshot.context.id,
-        snapshot,
-      }),
-    );
+    const contextId = ltiContextId(launchContext);
+    const link = contextId ? await UnitLink.findOne({ contextId }) : null;
+    if (link) {
+      // Keep the stored service details current; only staff launches pay for the plugin probe.
+      await refreshLinkFromLaunch(link, launchContext, {
+        probeCourseData: isStaffLaunch(launchContext.idToken.user.roles),
+      });
+    }
   } catch (error) {
     console.error(
       JSON.stringify({
-        event: 'moodle_course_data_fetch_failure',
-        status: error instanceof MoodleCourseDataServiceError ? error.status : 502,
+        event: 'lms_link_refresh_failure',
         error: error instanceof Error ? error.message : String(error),
       }),
     );
@@ -271,7 +263,6 @@ const setup = async () => {
 
 ltiHttpHandler.app.use('/lti/api', GradeRouter);
 ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
-ltiHttpHandler.app.use('/lti/api', CourseDataRouter);
 ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
 ltiHttpHandler.app.use('/lti/api', MemberRoute);
 ltiHttpHandler.app.use('/lti/api', AppHandoffRouter);

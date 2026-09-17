@@ -11,6 +11,7 @@ import {
   gradeLineItemErrorMessage,
   gradeLineItemErrorStatus,
 } from '../services/grade-line-item.service';
+import { refreshLinkFromLaunch } from '../services/lms-link.service';
 
 export const UnitLinkRouter = express.Router();
 
@@ -92,6 +93,15 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
     return sendError(res, 'LTI launch does not include a context ID', 400);
   }
 
+  const existingUnitLink = await UnitLink.findOne({ unitId: String(unitId) });
+  if (existingUnitLink && existingUnitLink.contextId !== contextId) {
+    return sendError(
+      res,
+      'This OnTrack unit is already linked to another LMS course. Unlink it from the LMS tab in OnTrack first.',
+      409,
+    );
+  }
+
   const newToken = {
     unit_id: unitId,
     iat: Math.floor(Date.now() / 1000),
@@ -136,11 +146,12 @@ UnitLinkRouter.post('/link', async (req: Request, res: Response) => {
   }
 
   // Current OnTrack user has permissions to enrol students into requested unit_id
-  const result = await UnitLink.findOneAndUpdate(
+  const link = await UnitLink.findOneAndUpdate(
     { contextId },
-    { unitId, lineItemId },
+    { unitId: String(unitId), lineItemId },
     { upsert: true, new: true },
   );
+  const result = await refreshLinkFromLaunch(link, launchContext, { probeCourseData: true });
   res.json(result);
 });
 
