@@ -182,6 +182,12 @@ InternalSyncRoute.post(
       }
       return res.json(snapshot);
     } catch (error) {
+      // 422 means Moodle rejected the plugin request, e.g. the plugin was uninstalled.
+      if (error instanceof LtiServiceError && error.status === 422 && link.courseDataAvailable) {
+        link.courseDataAvailable = false;
+        link.capabilitiesCheckedAt = new Date();
+        await link.save();
+      }
       return sendServiceError(res, 'lms_course_data_failure', error);
     }
   },
