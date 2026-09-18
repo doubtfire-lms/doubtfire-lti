@@ -202,6 +202,10 @@ ltiHttpHandler.app.get('/lti/api/session', async (req, res) => {
     return sendError(res, 'Invalid or expired LTI session', 401);
   }
 
+  if (ltiSessionCookieOptions.partitioned) {
+    // An older unpartitioned cookie of the same name would be sent first and shadow this launch
+    res.clearCookie(LTI_SESSION_COOKIE, { ...ltiSessionCookieOptions, partitioned: false });
+  }
   res.cookie(LTI_SESSION_COOKIE, ltik, ltiSessionCookieOptions);
 
   const signInUrl = new URL('/sign_in', Config.APP_HOST);
