@@ -92,7 +92,7 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   } catch (error) {
     return void sendError(
       response,
-      'Failed to get member information. Ensure our public Keyset URL is accessible from your platform.',
+      "Failed to get member information. Ensure 'IMS LTI Names and Role Provisioning' is enabled (not set to 'Do not use this service') and our public Keyset URL is accessible from your platform.",
       error instanceof HttpError && error.status ? error.status : 502,
     );
   }
