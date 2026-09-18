@@ -12,6 +12,30 @@ This API acts as a bridge between OnTrack’s Ruby API and LTI.js. The Angular f
 
 LTI.js simplifies integration with LMS platforms, while the Ruby API manages most permissions and institution-specific logic. Together, they enable enrolment syncing, and grade exchange between OnTrack and an LMS.
 
+## OnTrack LMS tab
+
+Units are linked to an LMS course by launching OnTrack from the LMS. After that, convenors manage the integration from the unit's **LMS** tab in OnTrack, which Rails serves by calling this bridge server-to-server. Launches of a linked course keep the stored service details (platform, Names and Roles memberships URL, course-data endpoint) current, so these calls need no user launch:
+
+```text
+X-Internal-Key: <INTERNAL_SYNC_KEY>
+
+GET    /lti/api/internal/units/:unitId/link             link details and available capabilities
+DELETE /lti/api/internal/units/:unitId/link             unlink (link again from an LMS launch)
+GET    /lti/api/internal/units/:unitId/members          Names and Role Provisioning members
+POST   /lti/api/internal/units/:unitId/course-data      Moodle plugin data: { "include": ["users"], "assignmentId": 456 }
+GET    /lti/api/internal/units/:unitId/grade-line-item  linked grade item
+POST   /lti/api/internal/units/:unitId/grade-line-item  find or create the linked grade item
+POST   /lti/api/internal/units/:unitId/scores           { "scores": [{ "userId": "3", "scoreGiven": 85 }] }
+```
+
+A unit can only be linked to one LMS course. Names and Role Provisioning is the baseline and works with any LTI 1.3 platform.
+
+## Moodle course-data service plugin
+
+Moodle groups, assignments and assignment extensions are not all available through standard LTI services. The companion `ltiservice_ontrack` Moodle plugin provides one read-only course-data service without enabling Moodle's generic Web Services subsystem.
+
+When the plugin is installed and enabled for the OnTrack external tool, Moodle advertises its endpoint and custom OAuth scope in the signed launch. The bridge stores it on the unit link and probes it when the unit is linked and on each staff launch, so OnTrack only unlocks group mapping and extension imports when the plugin works. Group membership is represented once as `groups[].member_user_ids`.
+
 ## Permissions & Roles
 
 Most permissions are handled by OnTrack's Ruby API. This means you will already need to have the Convenor role of a unit to be able to link the unit to a [Context](https://www.imsglobal.org/spec/lti/v1p3#contexts-and-resources), and run actions such as syncing enrolments, and importing portfolio grades. These permissions can be modified in the Institution Settings within the Ruby API.
@@ -77,6 +101,9 @@ DB_PASS:
 # Secret key used by the Ruby API to decode our custom LTI tokens.
 # Must match the value configured in the Ruby API.
 LTI_SHARED_API_SECRET: your-secret-shared-api-secret
+
+# Shared only between Rails (LTI_INTERNAL_SYNC_KEY) and this bridge. It enables the OnTrack LMS tab.
+INTERNAL_SYNC_KEY: your-random-internal-sync-key
 
 # Per-client rate limits for the window below.
 LTI_RATE_LIMIT_WINDOW_MS: 60000

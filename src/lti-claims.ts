@@ -25,3 +25,9 @@ export function ltiContextId(launchContext: LaunchContext): string | undefined {
 export function ltiResourceId(launchContext: LaunchContext): string | undefined {
   return stringClaim(launchContext.idToken.launch.resource, 'id');
 }
+
+export function isStaffLaunch(roles: readonly string[]): boolean {
+  return roles.some((role) =>
+    /(?:#|\/)(Instructor|TeachingAssistant|Administrator|ContentDeveloper|Manager)$/.test(role),
+  );
+}
