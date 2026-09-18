@@ -35,7 +35,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   if (!link.lineItemId) {
     return sendError(
       res,
-      'No grade line item is linked. Unlink and link the OnTrack unit again.',
+      "No grade line item is linked. Enable 'IMS LTI Assignment and Grade Services' for grade sync and column management, relaunch OnTrack, and retry grade setup.",
       409,
     );
   }
@@ -46,7 +46,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     if (!lineItem?.id) {
       return sendError(
         res,
-        'The linked grade line item is no longer available. Unlink and link the OnTrack unit again.',
+        'The linked grade line item is no longer available. Retry grade setup to find or create it.',
         409,
       );
     }

@@ -7,6 +7,13 @@ const UnitLinkSchema = new mongoose.Schema(
     unitId: { type: String, required: true, unique: true },
     lineItemId: { type: String },
 
+    // AGS details captured from the latest launch, used to recover grade sync without keeping
+    // launch state in the browser.
+    lineItemsUrl: { type: String },
+    agsScopes: { type: [String], default: [] },
+    resourceLinkId: { type: String },
+    claimedLineItemId: { type: String },
+
     // Service details captured from signed launches so OnTrack can reach the LMS without a launch.
     platformId: { type: String },
     contextLabel: { type: String },

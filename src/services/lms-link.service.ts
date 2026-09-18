@@ -1,5 +1,5 @@
 import type { LaunchContext, Platform } from 'ltijs';
-import { stringClaim } from '../lti-claims';
+import { ltiResourceId, stringArrayClaim, stringClaim } from '../lti-claims';
 import { lti } from '../lti-provider';
 import type { UnitLinkDocument } from '../schema/unitLink.model';
 import {
@@ -14,12 +14,10 @@ import {
 } from './platform-access.service';
 
 const NRPS_CLAIM = 'https://purl.imsglobal.org/spec/lti-nrps/claim/namesroleservice';
+const AGS_CLAIM = 'https://purl.imsglobal.org/spec/lti-ags/claim/endpoint';
 const NRPS_SCOPE = 'https://purl.imsglobal.org/spec/lti-nrps/scope/contextmembership.readonly';
 const NRPS_ACCEPT = 'application/vnd.ims.lti-nrps.v2.membershipcontainer+json';
-const AGS_LINEITEM_READONLY_SCOPE =
-  'https://purl.imsglobal.org/spec/lti-ags/scope/lineitem.readonly';
 const AGS_SCORE_SCOPE = 'https://purl.imsglobal.org/spec/lti-ags/scope/score';
-const LINEITEM_ACCEPT = 'application/vnd.ims.lis.v2.lineitem+json';
 const SCORE_CONTENT_TYPE = 'application/vnd.ims.lis.v1.score+json';
 const MAX_MEMBERSHIP_PAGES = 100;
 
@@ -39,12 +37,6 @@ export interface LmsMembership {
   members: LmsMember[];
 }
 
-export interface LmsLineItem {
-  id: string;
-  label?: string;
-  scoreMaximum?: number;
-}
-
 export interface LmsScore {
   userId: string;
   scoreGiven: number;
@@ -57,6 +49,14 @@ export interface LmsScore {
 function membershipsUrlFromLaunch(launchContext: LaunchContext): string | undefined {
   const claim = launchContext.rawIdToken[NRPS_CLAIM] as Record<string, unknown> | undefined;
   return stringClaim(claim, 'context_memberships_url');
+}
+
+function refreshGradeServiceDetails(link: UnitLinkDocument, launchContext: LaunchContext): void {
+  const claim = launchContext.rawIdToken[AGS_CLAIM] as Record<string, unknown> | undefined;
+  link.lineItemsUrl = stringClaim(claim, 'lineitems') ?? null;
+  link.agsScopes = stringArrayClaim(claim, 'scope') ?? [];
+  link.resourceLinkId = ltiResourceId(launchContext) ?? null;
+  link.claimedLineItemId = stringClaim(claim, 'lineitem') ?? null;
 }
 
 /**
@@ -73,6 +73,7 @@ export async function refreshLinkFromLaunch(
   link.contextLabel = stringClaim(context, 'label') ?? link.contextLabel ?? null;
   link.contextTitle = stringClaim(context, 'title') ?? link.contextTitle ?? null;
   link.membershipsUrl = membershipsUrlFromLaunch(launchContext) ?? null;
+  refreshGradeServiceDetails(link, launchContext);
 
   let configuration;
   try {
@@ -189,27 +190,6 @@ export async function fetchLinkMembers(
     pageUrl = next ? platformUrl(next, platform, 'memberships') : undefined;
   }
   return membership;
-}
-
-export async function fetchLinkLineItem(
-  link: UnitLinkDocument,
-  platform: Platform,
-): Promise<LmsLineItem | undefined> {
-  if (!link.lineItemId) return undefined;
-
-  const token = await getPlatformAccessToken(platform, [AGS_LINEITEM_READONLY_SCOPE]);
-  const url = platformUrl(link.lineItemId, platform, 'grade line item');
-  try {
-    const { body } = await platformRequest(
-      url,
-      { headers: { Accept: LINEITEM_ACCEPT, Authorization: token.authorization } },
-      'grade line item',
-    );
-    return body as LmsLineItem;
-  } catch (error) {
-    if (error instanceof LtiServiceError && error.status === 422) return undefined;
-    throw error;
-  }
 }
 
 export async function submitLinkScore(

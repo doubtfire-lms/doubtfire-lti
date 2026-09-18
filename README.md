@@ -24,6 +24,7 @@ DELETE /lti/api/internal/units/:unitId/link             unlink (link again from 
 GET    /lti/api/internal/units/:unitId/members          Names and Role Provisioning members
 POST   /lti/api/internal/units/:unitId/course-data      Moodle plugin data: { "include": ["users"], "assignmentId": 456 }
 GET    /lti/api/internal/units/:unitId/grade-line-item  linked grade item
+POST   /lti/api/internal/units/:unitId/grade-line-item  find or create the linked grade item
 POST   /lti/api/internal/units/:unitId/scores           { "scores": [{ "userId": "3", "scoreGiven": 85 }] }
 ```
 

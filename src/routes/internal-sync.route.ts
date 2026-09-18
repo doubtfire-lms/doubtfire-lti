@@ -3,11 +3,12 @@ import { Config } from '../config';
 import { lti } from '../lti-provider';
 import UnitLink, { UnitLinkDocument } from '../schema/unitLink.model';
 import {
-  fetchLinkLineItem,
-  fetchLinkMembers,
-  platformForLink,
-  submitLinkScore,
-} from '../services/lms-link.service';
+  ensureStoredGradeLineItem,
+  gradeLineItemErrorMessage,
+  gradeLineItemErrorStatus,
+  storedGradeLineItemStatus,
+} from '../services/grade-line-item.service';
+import { fetchLinkMembers, platformForLink, submitLinkScore } from '../services/lms-link.service';
 import {
   courseDataSectionsFrom,
   fetchStoredMoodleCourseData,
@@ -37,6 +38,15 @@ function sendServiceError(res: Response, event: string, error: unknown) {
   );
   return res.status(error instanceof LtiServiceError ? error.status : 502).json({
     error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function sendGradeLineItemError(res: Response, event: string, error: unknown) {
+  console.error(
+    JSON.stringify({ event, error: error instanceof Error ? error.message : String(error) }),
+  );
+  return res.status(gradeLineItemErrorStatus(error)).json({
+    error: gradeLineItemErrorMessage(error, 'Unable to find or create the Moodle grade item'),
   });
 }
 
@@ -185,16 +195,24 @@ InternalSyncRoute.get(
 
     try {
       const platform = await platformForLink(link);
-      const lineItem = await fetchLinkLineItem(link, platform);
-      if (!lineItem?.id) {
-        return res.json({ configured: false });
-      }
-      return res.json({
-        configured: true,
-        lineItem: { id: lineItem.id, label: lineItem.label, scoreMaximum: lineItem.scoreMaximum },
-      });
+      return res.json(await storedGradeLineItemStatus(link, platform));
     } catch (error) {
-      return sendServiceError(res, 'lms_grade_line_item_failure', error);
+      return sendGradeLineItemError(res, 'lms_grade_line_item_failure', error);
+    }
+  },
+);
+
+InternalSyncRoute.post(
+  '/internal/units/:unitId/grade-line-item',
+  async (req: Request, res: Response) => {
+    const link = await linkForUnit(req, res);
+    if (!link) return;
+
+    try {
+      const platform = await platformForLink(link);
+      return res.json(await ensureStoredGradeLineItem(link, platform));
+    } catch (error) {
+      return sendGradeLineItemError(res, 'lms_grade_line_item_retry_failure', error);
     }
   },
 );
