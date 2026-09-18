@@ -240,10 +240,13 @@ InternalSyncRoute.post('/internal/units/:unitId/scores', async (req: Request, re
         typeof score.userId === 'string' &&
         score.userId &&
         typeof score.scoreGiven === 'number' &&
-        Number.isFinite(score.scoreGiven),
+        Number.isFinite(score.scoreGiven) &&
+        (score.comment === undefined || typeof score.comment === 'string'),
     )
   ) {
-    return res.status(400).json({ error: 'scores must contain userId and numeric scoreGiven' });
+    return res.status(400).json({
+      error: 'scores must contain userId, numeric scoreGiven and an optional text comment',
+    });
   }
 
   let platform;
@@ -254,7 +257,7 @@ InternalSyncRoute.post('/internal/units/:unitId/scores', async (req: Request, re
   }
 
   const results: { userId: string; success: boolean; error?: string }[] = [];
-  for (const score of scores as { userId: string; scoreGiven: number }[]) {
+  for (const score of scores as { userId: string; scoreGiven: number; comment?: string }[]) {
     try {
       await submitLinkScore(link, platform, {
         userId: score.userId,
@@ -263,6 +266,7 @@ InternalSyncRoute.post('/internal/units/:unitId/scores', async (req: Request, re
         activityProgress: 'Completed',
         gradingProgress: 'FullyGraded',
         timestamp: new Date().toISOString(),
+        ...(score.comment ? { comment: score.comment } : {}),
       });
       results.push({ userId: score.userId, success: true });
     } catch (error) {

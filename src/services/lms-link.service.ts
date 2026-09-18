@@ -44,6 +44,7 @@ export interface LmsScore {
   activityProgress: string;
   gradingProgress: string;
   timestamp: string;
+  comment?: string;
 }
 
 function membershipsUrlFromLaunch(launchContext: LaunchContext): string | undefined {
