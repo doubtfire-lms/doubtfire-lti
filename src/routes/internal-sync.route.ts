@@ -1,5 +1,6 @@
 import express, { NextFunction, Request, Response } from 'express';
 import { Config } from '../config';
+import { ltiCourseUrl } from '../lti-claims';
 import { lti } from '../lti-provider';
 import UnitLink, { UnitLinkDocument } from '../schema/unitLink.model';
 import {
@@ -119,6 +120,7 @@ InternalSyncRoute.get('/internal/units/:unitId/link', async (req: Request, res: 
     contextId: link.contextId,
     contextLabel: link.contextLabel ?? null,
     contextTitle: link.contextTitle ?? null,
+    courseUrl: ltiCourseUrl(link.contextId) ?? null,
     platformName: platform?.name ?? null,
     platformUrl: platform?.url ?? null,
     namesAndRolesAvailable: !!link.membershipsUrl,

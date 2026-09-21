@@ -30,6 +30,14 @@ POST   /lti/api/internal/units/:unitId/scores           { "scores": [{ "userId":
 
 A unit can only be linked to one LMS course. Names and Role Provisioning is the baseline and works with any LTI 1.3 platform.
 
+### Course links
+
+The LMS tab shows an external-link icon beside the course name when the link response includes `courseUrl`. This URL is captured on each signed launch and stored on the existing MongoDB unit link; existing links gain it on their next LMS launch.
+
+For Moodle, the bridge checks the launch's `tool_platform.product_family_code` and combines the registered platform URL with Moodle's numeric `context.id` to build `course/view.php?id=…`, preserving any installation subdirectory. Other LMS platforms can supply the full course-page URL in the custom launch parameter `ontrack_course_url`; this takes precedence over the Moodle default. Only absolute HTTP(S) URLs without embedded credentials are accepted. If no course URL can be resolved, the icon is hidden.
+
+LTI 1.3 does not define a universal course-page URL. Its optional `launch_presentation.return_url` is a return destination for the current launch, not necessarily the course home; Moodle's version contains a session key, so it is not persisted for this feature.
+
 ## Moodle course-data service plugin
 
 Moodle groups, assignments and assignment extensions are not all available through standard LTI services. The companion `ltiservice_ontrack` Moodle plugin provides one read-only course-data service without enabling Moodle's generic Web Services subsystem.
@@ -84,6 +92,10 @@ PORT: 3002
 LTI_KEY: your-secret-lti-key
 
 PLATFORM_URL: https://moodle.example.com
+# Optional: links OnTrack back to the LMS course page. {COURSE_ID} is the LTI context id.
+# Moodle: https://moodle.example.com/course/view.php?id={COURSE_ID}
+# Canvas: https://canvas.example.com/courses/{COURSE_ID}
+PLATFORM_COURSE_URL:
 PLATFORM_NAME: Moodle Test Environment
 # Once you have added OnTrack as an external tool, you can retrieve its client ID and add it here
 PLATFORM_CLIENT_ID: your-client-id
