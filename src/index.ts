@@ -100,8 +100,12 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   const member = members.members.find(
     (candidate) => candidate.userId === launchContext.idToken.user.id,
   );
+
+  // e.g. Moodle site administrators launching a course they aren't enrolled in
   if (!member) {
-    return void sendError(response, 'Could not retrieve member information', 400);
+    const errorUrl = new URL('/lti', Config.APP_HOST);
+    errorUrl.searchParams.set('launchError', 'not_member');
+    return void response.redirect(errorUrl.toString());
   }
 
   const newToken = {
