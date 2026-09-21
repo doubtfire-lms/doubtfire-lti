@@ -4,6 +4,8 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3001;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const DEBUG = process.env.DEBUG?.toLowerCase() === 'true';
+
 if (!process.env.API_HOST) throw 'API_HOST is not defined';
 if (!process.env.APP_HOST) throw 'APP_HOST is not defined';
 const API_HOST = process.env.API_HOST;
@@ -87,4 +89,5 @@ export const Config = {
   PLATFORM_AUTHCONFIG_KEY,
 
   IS_PRODUCTION,
+  DEBUG,
 };

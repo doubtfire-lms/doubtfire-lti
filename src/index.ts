@@ -61,15 +61,28 @@ function railsErrorMessage(body: unknown, fallback: string): string {
 // When receiving successful LTI launch redirects to app
 lti.onResourceLink(async (launchContext, _request, response) => {
   const context = launchContext.idToken.launch.context;
-  const contextLabel = stringClaim(context, 'label');
-  const contextTitle = stringClaim(context, 'title');
-  if (contextLabel && contextTitle) {
-    console.log(`Context is ${contextLabel} - ${contextTitle}`);
-    console.log(stringArrayClaim(context, 'type'));
-  }
+  const launchUser = launchContext.idToken.user;
+  const launchLog = {
+    contextId: ltiContextId(launchContext),
+    contextLabel: stringClaim(context, 'label'),
+    contextTitle: stringClaim(context, 'title'),
+    userId: launchUser.id,
+    roles: launchUser.roles,
+  };
+  console.info(
+    JSON.stringify({
+      event: 'lti_launch',
+      ...launchLog,
+      contextType: stringArrayClaim(context, 'type'),
+      // Personal details only when debugging
+      ...(Config.DEBUG
+        ? { name: launchUser.name, email: launchUser.email, roles: launchUser.roles }
+        : {}),
+    }),
+  );
 
   try {
-    const contextId = ltiContextId(launchContext);
+    const { contextId } = launchLog;
     const link = contextId ? await UnitLink.findOne({ contextId }) : null;
     if (link) {
       // Keep the stored service details current; only staff launches pay for the plugin probe.
@@ -103,9 +116,14 @@ lti.onResourceLink(async (launchContext, _request, response) => {
 
   // e.g. Moodle site administrators launching a course they aren't enrolled in
   if (!member) {
+    console.warn(JSON.stringify({ event: 'lti_launch_not_member', ...launchLog }));
     const errorUrl = new URL('/lti', Config.APP_HOST);
     errorUrl.searchParams.set('launchError', 'not_member');
     return void response.redirect(errorUrl.toString());
+  }
+
+  if (Config.DEBUG) {
+    console.debug(JSON.stringify({ event: 'lti_launch_member', member }));
   }
 
   const newToken = {
