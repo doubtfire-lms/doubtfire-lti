@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Config } from '../config';
 import { ltiCourseUrl } from '../lti-claims';
 import { lti } from '../lti-provider';
@@ -87,6 +88,16 @@ InternalSyncRoute.post('/internal/test-members', async (req: Request, res: Respo
   } catch (error) {
     return sendServiceError(res, 'nrps_test_failure', error);
   }
+});
+
+/*
+ * Lets OnTrack skip its scheduled LMS sync when this service cannot serve it.
+ */
+InternalSyncRoute.get('/internal/health', (_req: Request, res: Response) => {
+  if (mongoose.connection.readyState !== mongoose.ConnectionStates.connected) {
+    return res.status(503).json({ error: 'The LTI service database is unavailable' });
+  }
+  return res.json({ ok: true });
 });
 
 /*
