@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Config } from '../config';
-import { sendError } from '../errors';
+import { LAUNCH_EMAIL_MISSING_MESSAGE, sendError } from '../errors';
 
 export const AppHandoffRouter = express.Router();
 
@@ -23,11 +23,7 @@ AppHandoffRouter.post('/app-handoff', async (req: Request, res: Response) => {
 
   const email = launchContext.idToken.user.email;
   if (!email) {
-    return sendError(
-      res,
-      "Moodle is not sharing the launcher's email with OnTrack. Set 'Share launcher's email with tool' to Always.",
-      422,
-    );
+    return sendError(res, LAUNCH_EMAIL_MISSING_MESSAGE, 422);
   }
 
   const signedToken = jwt.sign(
