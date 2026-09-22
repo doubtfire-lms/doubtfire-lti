@@ -14,7 +14,7 @@ LTI.js simplifies integration with LMS platforms, while the Ruby API manages mos
 
 ## OnTrack LMS tab
 
-Units are linked to an LMS course by launching OnTrack from the LMS. After that, convenors manage the integration from the unit's **LMS** tab in OnTrack, which Rails serves by calling this bridge server-to-server. Launches of a linked course keep the stored service details (platform, Names and Roles memberships URL, course-data endpoint) current, so these calls need no user launch:
+Units are linked to an LMS course by launching OnTrack from the LMS. After that, convenors manage the integration from the unit's **LMS** tab in OnTrack, which Rails serves by calling this bridge server-to-server. Launches of a linked course keep the stored service details (platform, Names and Roles memberships URL, course-data endpoint) current, so these calls need no user launch. They are served on `INTERNAL_PORT` (default 3003), not the public port, so the reverse proxy cannot route to them:
 
 ```text
 X-Internal-Key: <INTERNAL_SYNC_KEY>
@@ -89,6 +89,8 @@ API_HOST: http://apiserver:3000
 APP_HOST: https://ontrack.example.com
 
 PORT: 3002
+# Internal API port, called only by OnTrack's Rails API; set Rails' LTI_INTERNAL_URL to it.
+INTERNAL_PORT: 3003
 LTI_KEY: your-secret-lti-key
 
 PLATFORM_URL: https://moodle.example.com

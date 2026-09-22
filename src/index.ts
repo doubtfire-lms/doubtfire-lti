@@ -3,13 +3,13 @@ import { HttpError, IdTokenValidationMethod } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
+import { startInternalServer } from './internal-server';
 import { isStaffLaunch, ltiContextId, stringArrayClaim, stringClaim } from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
 import { AppHandoffRouter } from './routes/app-handoff.route';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
-import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
 import UnitLink from './schema/unitLink.model';
@@ -255,6 +255,7 @@ const setup = async () => {
   }
 
   await lti.listen();
+  startInternalServer();
 
   const existingPlatform = await lti.platformManager.getPlatformByUrlAndClientId(
     Config.PLATFORM_URL,
@@ -292,6 +293,5 @@ ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
 ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
 ltiHttpHandler.app.use('/lti/api', MemberRoute);
 ltiHttpHandler.app.use('/lti/api', AppHandoffRouter);
-ltiHttpHandler.app.use('/lti/api', InternalSyncRoute);
 
 setup();

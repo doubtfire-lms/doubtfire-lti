@@ -22,12 +22,7 @@ declare module 'express-serve-static-core' {
 }
 
 function isProtectedBrowserRoute(req: Request): boolean {
-  return (
-    req.path.startsWith('/lti/api/') &&
-    !publicLtiPaths.has(req.path) &&
-    // Internal routes authenticate with the shared internal key instead of a browser session.
-    !req.path.startsWith('/lti/api/internal/')
-  );
+  return req.path.startsWith('/lti/api/') && !publicLtiPaths.has(req.path);
 }
 
 export const ltiSessionCookieOptions: CookieOptions = {

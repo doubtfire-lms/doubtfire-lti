@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
+const INTERNAL_PORT = Number(process.env.INTERNAL_PORT || 3003);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DEBUG = process.env.DEBUG?.toLowerCase() === 'true';
 
@@ -62,6 +63,7 @@ const PLATFORM_AUTHCONFIG_KEY = process.env.PLATFORM_AUTHCONFIG_KEY;
 
 export const Config = {
   PORT,
+  INTERNAL_PORT,
   API_HOST,
   APP_HOST,
 
