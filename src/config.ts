@@ -25,6 +25,13 @@ if (!process.env.LTI_KEY) throw 'LTI_KEY is not defined';
 if (!process.env.LTI_SHARED_API_SECRET) throw 'LTI_SHARED_API_SECRET is not defined';
 const LTI_KEY = process.env.LTI_KEY;
 const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
+// Anyone holding this secret can sign in to OnTrack as any user
+if (
+  Buffer.byteLength(LTI_SHARED_API_SECRET) < 32 ||
+  LTI_SHARED_API_SECRET === 'your-secret-lti-shared-api-secret'
+) {
+  throw 'LTI_SHARED_API_SECRET must be at least 32 bytes and not the example value. Generate one with `openssl rand -hex 32`';
+}
 const INTERNAL_SYNC_KEY: string | undefined = process.env.INTERNAL_SYNC_KEY;
 
 const LTI_RATE_LIMIT_WINDOW_MS = Number(process.env.LTI_RATE_LIMIT_WINDOW_MS ?? 60_000);
