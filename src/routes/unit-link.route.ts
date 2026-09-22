@@ -27,6 +27,7 @@ async function authoriseUnitLink(
 ): Promise<UnitLinkAuthorisation> {
   const signedToken = jwt.sign(
     {
+      purpose: 'link',
       unit_id: unitId,
       email: launchContext.idToken.user.email,
       iat: Math.floor(Date.now() / 1000),

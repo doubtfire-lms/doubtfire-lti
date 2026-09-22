@@ -66,6 +66,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   }
 
   const newToken = {
+    purpose: 'grades',
     unit_id: link.unitId,
     student_emails: [...members.members.map((m) => m.email)],
     iat: Math.floor(Date.now() / 1000),

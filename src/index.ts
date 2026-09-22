@@ -127,6 +127,7 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   }
 
   const newToken = {
+    purpose: 'auth',
     member,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
