@@ -4,7 +4,13 @@ import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
 import { startInternalServer } from './internal-server';
-import { isStaffLaunch, ltiContextId, stringArrayClaim, stringClaim } from './lti-claims';
+import {
+  isStaffLaunch,
+  ltiContextId,
+  ltiPersonSourcedId,
+  stringArrayClaim,
+  stringClaim,
+} from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
 import { AppHandoffRouter } from './routes/app-handoff.route';
@@ -128,7 +134,11 @@ lti.onResourceLink(async (launchContext, _request, response) => {
 
   const newToken = {
     purpose: 'auth',
-    member,
+    // Names and Roles can omit the sourcedid, so fall back to the launch's LIS claim
+    member: {
+      ...member,
+      lis_person_sourcedid: member.lisPersonSourcedid || ltiPersonSourcedId(launchContext),
+    },
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
     jti: crypto.randomUUID(),

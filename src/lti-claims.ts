@@ -1,6 +1,8 @@
 import type { LaunchContext } from 'ltijs';
 import { Config } from './config';
 
+const LIS_CLAIM = 'https://purl.imsglobal.org/spec/lti/claim/lis';
+
 export function stringClaim(
   claims: Readonly<Record<string, unknown>> | undefined,
   key: string,
@@ -38,6 +40,12 @@ export function ltiCourseUrl(contextId: string | undefined | null): string | und
 
 export function ltiResourceId(launchContext: LaunchContext): string | undefined {
   return stringClaim(launchContext.idToken.launch.resource, 'id');
+}
+
+/** The launch user's LIS person sourcedid, which Moodle fills from the user's ID number. */
+export function ltiPersonSourcedId(launchContext: LaunchContext): string | undefined {
+  const claim = launchContext.rawIdToken[LIS_CLAIM] as Record<string, unknown> | undefined;
+  return stringClaim(claim, 'person_sourcedid');
 }
 
 export function isStaffLaunch(roles: readonly string[]): boolean {
