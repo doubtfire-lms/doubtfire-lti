@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.0.0](///compare/v2.0.0...v3.0.0) (2026-09-23)
+
+
+### Features
+
+* extend lti via moodle plugin and automate syncing ([#28](undefined/undefined/undefined/issues/28)) 51cbf09
+
 ## [2.0.0](///compare/v2.0.0-lti-v7.3...v2.0.0) (2026-09-16)
 
 
