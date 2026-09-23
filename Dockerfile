@@ -7,7 +7,7 @@ RUN npm ci
 
 COPY . .
 
-# Our Ruby API is served over port 3000
-EXPOSE 3001
+# 3001: public LTI API (LMS launches, browser). 3003: internal API called by OnTrack's Rails API
+EXPOSE 3001 3003
 
 CMD ["npm", "run", "start"]

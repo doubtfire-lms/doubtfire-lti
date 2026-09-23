@@ -7,6 +7,7 @@ import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
 import {
   findStoredGradeLineItem,
+  gradeLineItemErrorMessage,
   gradeLineItemErrorStatus,
 } from '../services/grade-line-item.service';
 
@@ -34,7 +35,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   if (!link.lineItemId) {
     return sendError(
       res,
-      'No grade line item is linked. Unlink and link the OnTrack unit again.',
+      "No grade line item is linked. Enable 'IMS LTI Assignment and Grade Services' for grade sync and column management, relaunch OnTrack, and retry grade setup.",
       409,
     );
   }
@@ -45,7 +46,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     if (!lineItem?.id) {
       return sendError(
         res,
-        'The linked grade line item is no longer available. Unlink and link the OnTrack unit again.',
+        'The linked grade line item is no longer available. Retry grade setup to find or create it.',
         409,
       );
     }
@@ -54,7 +55,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
     console.error('Unable to validate the linked Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to validate the linked Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }
@@ -65,6 +66,7 @@ GradeRouter.post('/grades', async (req: Request, res: Response) => {
   }
 
   const newToken = {
+    purpose: 'grades',
     unit_id: link.unitId,
     student_emails: [...members.members.map((m) => m.email)],
     iat: Math.floor(Date.now() / 1000),
@@ -183,7 +185,7 @@ GradeRouter.get('/grade', async (req: Request, res: Response) => {
     console.error('Unable to validate the linked Moodle grade item', error);
     return sendError(
       res,
-      error instanceof Error ? error.message : 'Unable to validate the linked Moodle grade item',
+      gradeLineItemErrorMessage(error, 'Unable to validate the linked Moodle grade item'),
       gradeLineItemErrorStatus(error),
     );
   }

@@ -22,17 +22,15 @@ declare module 'express-serve-static-core' {
 }
 
 function isProtectedBrowserRoute(req: Request): boolean {
-  return (
-    req.path.startsWith('/lti/api/') &&
-    !publicLtiPaths.has(req.path) &&
-    req.path !== '/lti/api/internal/test-members'
-  );
+  return req.path.startsWith('/lti/api/') && !publicLtiPaths.has(req.path);
 }
 
 export const ltiSessionCookieOptions: CookieOptions = {
   httpOnly: true,
   secure: Config.LTI_COOKIES_SECURE,
   sameSite: Config.LTI_COOKIES_SAMESITE,
+  // Partitioned cookies still work inside the LMS iframe when browsers block third-party cookies.
+  partitioned: Config.LTI_COOKIES_SECURE && Config.LTI_COOKIES_SAMESITE === 'none',
   signed: true,
   path: '/lti/api',
 };

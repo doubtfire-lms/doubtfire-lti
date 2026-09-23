@@ -3,14 +3,23 @@ import { HttpError, IdTokenValidationMethod } from 'ltijs';
 import mongoose from 'mongoose';
 import { Config } from './config';
 import { sendError } from './errors';
-import { stringArrayClaim, stringClaim } from './lti-claims';
+import { startInternalServer } from './internal-server';
+import {
+  isStaffLaunch,
+  ltiContextId,
+  ltiPersonSourcedId,
+  stringArrayClaim,
+  stringClaim,
+} from './lti-claims';
 import { lti, ltiHttpHandler } from './lti-provider';
 import { LTI_SESSION_COOKIE, ltiSessionCookieOptions } from './lti-session';
+import { AppHandoffRouter } from './routes/app-handoff.route';
 import { EnrolmentRouter } from './routes/enrolment.route';
 import { GradeRouter } from './routes/grade.route';
-import { InternalSyncRoute } from './routes/internal-sync.route';
 import { MemberRoute } from './routes/member.route';
 import { UnitLinkRouter } from './routes/unit-link.route';
+import UnitLink from './schema/unitLink.model';
+import { refreshLinkFromLaunch } from './services/lms-link.service';
 
 interface AuthResponse {
   username: string;
@@ -57,15 +66,43 @@ function railsErrorMessage(body: unknown, fallback: string): string {
 
 // When receiving successful LTI launch redirects to app
 lti.onResourceLink(async (launchContext, _request, response) => {
-  const moodleGroupIds = launchContext.idToken.launch.custom?.moodle_group_ids;
-  console.log('Moodle group IDs:', typeof moodleGroupIds === 'string' ? moodleGroupIds : '');
-
   const context = launchContext.idToken.launch.context;
-  const contextLabel = stringClaim(context, 'label');
-  const contextTitle = stringClaim(context, 'title');
-  if (contextLabel && contextTitle) {
-    console.log(`Context is ${contextLabel} - ${contextTitle}`);
-    console.log(stringArrayClaim(context, 'type'));
+  const launchUser = launchContext.idToken.user;
+  const launchLog = {
+    contextId: ltiContextId(launchContext),
+    contextLabel: stringClaim(context, 'label'),
+    contextTitle: stringClaim(context, 'title'),
+    userId: launchUser.id,
+    roles: launchUser.roles,
+  };
+  console.info(
+    JSON.stringify({
+      event: 'lti_launch',
+      ...launchLog,
+      contextType: stringArrayClaim(context, 'type'),
+      // Personal details only when debugging
+      ...(Config.DEBUG
+        ? { name: launchUser.name, email: launchUser.email, roles: launchUser.roles }
+        : {}),
+    }),
+  );
+
+  try {
+    const { contextId } = launchLog;
+    const link = contextId ? await UnitLink.findOne({ contextId }) : null;
+    if (link) {
+      // Keep the stored service details current; only staff launches pay for the plugin probe.
+      await refreshLinkFromLaunch(link, launchContext, {
+        probeCourseData: isStaffLaunch(launchContext.idToken.user.roles),
+      });
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: 'lms_link_refresh_failure',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 
   let members;
@@ -74,7 +111,7 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   } catch (error) {
     return void sendError(
       response,
-      'Failed to get member information. Ensure our public Keyset URL is accessible from your platform.',
+      "Failed to get member information. Ensure 'IMS LTI Names and Role Provisioning' is enabled (not set to 'Do not use this service') and our public Keyset URL is accessible from your platform.",
       error instanceof HttpError && error.status ? error.status : 502,
     );
   }
@@ -82,12 +119,26 @@ lti.onResourceLink(async (launchContext, _request, response) => {
   const member = members.members.find(
     (candidate) => candidate.userId === launchContext.idToken.user.id,
   );
+
+  // e.g. Moodle site administrators launching a course they aren't enrolled in
   if (!member) {
-    return void sendError(response, 'Could not retrieve member information', 400);
+    console.warn(JSON.stringify({ event: 'lti_launch_not_member', ...launchLog }));
+    const errorUrl = new URL('/lti', Config.APP_HOST);
+    errorUrl.searchParams.set('launchError', 'not_member');
+    return void response.redirect(errorUrl.toString());
+  }
+
+  if (Config.DEBUG) {
+    console.debug(JSON.stringify({ event: 'lti_launch_member', member }));
   }
 
   const newToken = {
-    member,
+    purpose: 'auth',
+    // Names and Roles can omit the sourcedid, so fall back to the launch's LIS claim
+    member: {
+      ...member,
+      lis_person_sourcedid: member.lisPersonSourcedid || ltiPersonSourcedId(launchContext),
+    },
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 30, // 30 seconds
     jti: crypto.randomUUID(),
@@ -184,6 +235,10 @@ ltiHttpHandler.app.get('/lti/api/session', async (req, res) => {
     return sendError(res, 'Invalid or expired LTI session', 401);
   }
 
+  if (ltiSessionCookieOptions.partitioned) {
+    // An older unpartitioned cookie of the same name would be sent first and shadow this launch
+    res.clearCookie(LTI_SESSION_COOKIE, { ...ltiSessionCookieOptions, partitioned: false });
+  }
   res.cookie(LTI_SESSION_COOKIE, ltik, ltiSessionCookieOptions);
 
   const signInUrl = new URL('/sign_in', Config.APP_HOST);
@@ -211,6 +266,7 @@ const setup = async () => {
   }
 
   await lti.listen();
+  startInternalServer();
 
   const existingPlatform = await lti.platformManager.getPlatformByUrlAndClientId(
     Config.PLATFORM_URL,
@@ -247,6 +303,6 @@ ltiHttpHandler.app.use('/lti/api', GradeRouter);
 ltiHttpHandler.app.use('/lti/api', EnrolmentRouter);
 ltiHttpHandler.app.use('/lti/api', UnitLinkRouter);
 ltiHttpHandler.app.use('/lti/api', MemberRoute);
-ltiHttpHandler.app.use('/lti/api', InternalSyncRoute);
+ltiHttpHandler.app.use('/lti/api', AppHandoffRouter);
 
 setup();

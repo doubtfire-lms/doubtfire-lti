@@ -12,6 +12,38 @@ This API acts as a bridge between OnTrack’s Ruby API and LTI.js. The Angular f
 
 LTI.js simplifies integration with LMS platforms, while the Ruby API manages most permissions and institution-specific logic. Together, they enable enrolment syncing, and grade exchange between OnTrack and an LMS.
 
+## OnTrack LMS tab
+
+Units are linked to an LMS course by launching OnTrack from the LMS. After that, convenors manage the integration from the unit's **LMS** tab in OnTrack, which Rails serves by calling this bridge server-to-server. Launches of a linked course keep the stored service details (platform, Names and Roles memberships URL, course-data endpoint) current, so these calls need no user launch. They are served on `INTERNAL_PORT` (default 3003), not the public port, so the reverse proxy cannot route to them:
+
+```text
+X-Internal-Key: <INTERNAL_SYNC_KEY>
+
+GET    /lti/api/internal/units/:unitId/link             link details and available capabilities
+DELETE /lti/api/internal/units/:unitId/link             unlink (link again from an LMS launch)
+GET    /lti/api/internal/units/:unitId/members          Names and Role Provisioning members
+POST   /lti/api/internal/units/:unitId/course-data      Moodle plugin data: { "include": ["users"], "assignmentId": 456 }
+GET    /lti/api/internal/units/:unitId/grade-line-item  linked grade item
+POST   /lti/api/internal/units/:unitId/grade-line-item  find or create the linked grade item
+POST   /lti/api/internal/units/:unitId/scores           { "scores": [{ "userId": "3", "scoreGiven": 85 }] }
+```
+
+A unit can only be linked to one LMS course. Names and Role Provisioning is the baseline and works with any LTI 1.3 platform.
+
+### Course links
+
+The LMS tab shows an external-link icon beside the course name when the link response includes `courseUrl`. This URL is captured on each signed launch and stored on the existing MongoDB unit link; existing links gain it on their next LMS launch.
+
+For Moodle, the bridge checks the launch's `tool_platform.product_family_code` and combines the registered platform URL with Moodle's numeric `context.id` to build `course/view.php?id=…`, preserving any installation subdirectory. Other LMS platforms can supply the full course-page URL in the custom launch parameter `ontrack_course_url`; this takes precedence over the Moodle default. Only absolute HTTP(S) URLs without embedded credentials are accepted. If no course URL can be resolved, the icon is hidden.
+
+LTI 1.3 does not define a universal course-page URL. Its optional `launch_presentation.return_url` is a return destination for the current launch, not necessarily the course home; Moodle's version contains a session key, so it is not persisted for this feature.
+
+## Moodle course-data service plugin
+
+Moodle groups, assignments and assignment extensions are not all available through standard LTI services. The companion `ltiservice_ontrack` Moodle plugin provides one read-only course-data service without enabling Moodle's generic Web Services subsystem.
+
+When the plugin is installed and enabled for the OnTrack external tool, Moodle advertises its endpoint and custom OAuth scope in the signed launch. The bridge stores it on the unit link and probes it when the unit is linked and on each staff launch, so OnTrack only unlocks group mapping and extension imports when the plugin works. Group membership is represented once as `groups[].member_user_ids`.
+
 ## Permissions & Roles
 
 Most permissions are handled by OnTrack's Ruby API. This means you will already need to have the Convenor role of a unit to be able to link the unit to a [Context](https://www.imsglobal.org/spec/lti/v1p3#contexts-and-resources), and run actions such as syncing enrolments, and importing portfolio grades. These permissions can be modified in the Institution Settings within the Ruby API.
@@ -57,9 +89,15 @@ API_HOST: http://apiserver:3000
 APP_HOST: https://ontrack.example.com
 
 PORT: 3002
+# Internal API port, called only by OnTrack's Rails API; set Rails' LTI_INTERNAL_URL to it.
+INTERNAL_PORT: 3003
 LTI_KEY: your-secret-lti-key
 
 PLATFORM_URL: https://moodle.example.com
+# Optional: links OnTrack back to the LMS course page. {COURSE_ID} is the LTI context id.
+# Moodle: https://moodle.example.com/course/view.php?id={COURSE_ID}
+# Canvas: https://canvas.example.com/courses/{COURSE_ID}
+PLATFORM_COURSE_URL:
 PLATFORM_NAME: Moodle Test Environment
 # Once you have added OnTrack as an external tool, you can retrieve its client ID and add it here
 PLATFORM_CLIENT_ID: your-client-id
@@ -77,6 +115,9 @@ DB_PASS:
 # Secret key used by the Ruby API to decode our custom LTI tokens.
 # Must match the value configured in the Ruby API.
 LTI_SHARED_API_SECRET: your-secret-shared-api-secret
+
+# Shared only between Rails (LTI_INTERNAL_SYNC_KEY) and this bridge. It enables the OnTrack LMS tab.
+INTERNAL_SYNC_KEY: your-random-internal-sync-key
 
 # Per-client rate limits for the window below.
 LTI_RATE_LIMIT_WINDOW_MS: 60000

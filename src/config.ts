@@ -3,7 +3,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
+const INTERNAL_PORT = Number(process.env.INTERNAL_PORT || 3003);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const DEBUG = process.env.DEBUG?.toLowerCase() === 'true';
+
 if (!process.env.API_HOST) throw 'API_HOST is not defined';
 if (!process.env.APP_HOST) throw 'APP_HOST is not defined';
 const API_HOST = process.env.API_HOST;
@@ -22,6 +25,13 @@ if (!process.env.LTI_KEY) throw 'LTI_KEY is not defined';
 if (!process.env.LTI_SHARED_API_SECRET) throw 'LTI_SHARED_API_SECRET is not defined';
 const LTI_KEY = process.env.LTI_KEY;
 const LTI_SHARED_API_SECRET = process.env.LTI_SHARED_API_SECRET;
+// Anyone holding this secret can sign in to OnTrack as any user
+if (
+  Buffer.byteLength(LTI_SHARED_API_SECRET) < 32 ||
+  LTI_SHARED_API_SECRET === 'your-secret-lti-shared-api-secret'
+) {
+  throw 'LTI_SHARED_API_SECRET must be at least 32 bytes and not the example value. Generate one with `openssl rand -hex 32`';
+}
 const INTERNAL_SYNC_KEY: string | undefined = process.env.INTERNAL_SYNC_KEY;
 
 const LTI_RATE_LIMIT_WINDOW_MS = Number(process.env.LTI_RATE_LIMIT_WINDOW_MS ?? 60_000);
@@ -50,6 +60,7 @@ if (!process.env.PLATFORM_AUTHCONFIG_METHOD) throw 'PLATFORM_AUTHCONFIG_METHOD i
 if (!process.env.PLATFORM_AUTHCONFIG_KEY) throw 'PLATFORM_AUTHCONFIG_KEY is not defined';
 
 const PLATFORM_URL = process.env.PLATFORM_URL;
+const PLATFORM_COURSE_URL = process.env.PLATFORM_COURSE_URL;
 const PLATFORM_NAME = process.env.PLATFORM_NAME;
 const PLATFORM_CLIENT_ID = process.env.PLATFORM_CLIENT_ID;
 const PLATFORM_AUTHENTICATION_ENDPOINT = process.env.PLATFORM_AUTHENTICATION_ENDPOINT;
@@ -59,6 +70,7 @@ const PLATFORM_AUTHCONFIG_KEY = process.env.PLATFORM_AUTHCONFIG_KEY;
 
 export const Config = {
   PORT,
+  INTERNAL_PORT,
   API_HOST,
   APP_HOST,
 
@@ -77,6 +89,7 @@ export const Config = {
   LTI_COOKIES_SAMESITE,
 
   PLATFORM_URL,
+  PLATFORM_COURSE_URL,
   PLATFORM_NAME,
   PLATFORM_CLIENT_ID,
   PLATFORM_AUTHENTICATION_ENDPOINT,
@@ -85,4 +98,5 @@ export const Config = {
   PLATFORM_AUTHCONFIG_KEY,
 
   IS_PRODUCTION,
+  DEBUG,
 };

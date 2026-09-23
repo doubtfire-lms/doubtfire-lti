@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Config } from '../config';
-import { sendError } from '../errors';
+import { LAUNCH_EMAIL_MISSING_MESSAGE, sendError } from '../errors';
 import { ltiContextId } from '../lti-claims';
 import UnitLink from '../schema/unitLink.model';
 
@@ -33,6 +33,7 @@ EnrolmentRouter.post('/enrolments', async (req: Request, res: Response) => {
   }
 
   const newToken = {
+    purpose: 'enrol_bulk',
     unit_id: link?.unitId,
     members: members.members,
     iat: Math.floor(Date.now() / 1000),
@@ -91,9 +92,15 @@ EnrolmentRouter.post('/enrol', async (req: Request, res: Response) => {
 
   const member = members.members.find((m) => m.userId === launchContext.idToken.user.id);
 
+  if (!launchContext.idToken.user.email) {
+    return sendError(res, LAUNCH_EMAIL_MISSING_MESSAGE, 422);
+  }
+
   const newToken = {
+    purpose: 'enrol',
     unit_id: link?.unitId,
     member: member,
+    email: launchContext.idToken.user.email,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 30,
     jti: crypto.randomUUID(),
