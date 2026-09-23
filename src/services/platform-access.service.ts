@@ -41,7 +41,7 @@ export async function getPlatformAccessToken(
   platform: Platform,
   scopes: readonly string[],
 ): Promise<PlatformAccessToken> {
-  const scope = [...scopes].sort().join(' ');
+  const scope = [...scopes].sort((a, b) => a.localeCompare(b)).join(' ');
   const cacheKey = `${platform.id}|${scope}`;
   const cached = tokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached;
@@ -73,7 +73,12 @@ export async function getPlatformAccessToken(
   const payload = (await response.json().catch(() => null)) as
     (Partial<AccessTokenResponse> & { error?: string }) | null;
   if (!response.ok || !payload?.access_token || !payload.token_type || !payload.expires_in) {
-    const reason = payload?.error ? `: ${payload.error}` : ` (${response.status})`;
+    // The LMS's error text reaches logs, the LMS tab and emails, so keep it to one short line
+    const lmsError =
+      typeof payload?.error === 'string'
+        ? payload.error.replace(/[\r\n]+/g, ' ').slice(0, 200)
+        : '';
+    const reason = lmsError ? `: ${lmsError}` : ` (${response.status})`;
     throw new LtiServiceError(
       `The LMS did not issue an access token for ${scope}${reason}`,
       platformErrorStatus(response.status),
