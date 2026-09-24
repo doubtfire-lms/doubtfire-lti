@@ -21,11 +21,13 @@ export const INTERNAL_SYNC_ROUTE_PATH = '/lti/api/internal/test-members';
 export const InternalSyncRoute = express.Router();
 
 function internalRequestAuthorised(req: Request): boolean {
-  return !!Config.INTERNAL_SYNC_KEY && req.header('x-internal-key') === Config.INTERNAL_SYNC_KEY;
+  return (
+    !!Config.LTI_INTERNAL_SYNC_KEY && req.header('x-internal-key') === Config.LTI_INTERNAL_SYNC_KEY
+  );
 }
 
 InternalSyncRoute.use('/internal', (req: Request, res: Response, next: NextFunction) => {
-  if (!Config.INTERNAL_SYNC_KEY) {
+  if (!Config.LTI_INTERNAL_SYNC_KEY) {
     return res.status(404).json({ error: 'Not found' });
   }
   if (!internalRequestAuthorised(req)) {

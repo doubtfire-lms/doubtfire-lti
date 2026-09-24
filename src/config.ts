@@ -32,7 +32,9 @@ if (
 ) {
   throw 'LTI_SHARED_API_SECRET must be at least 32 bytes and not the example value. Generate one with `openssl rand -hex 32`';
 }
-const INTERNAL_SYNC_KEY: string | undefined = process.env.INTERNAL_SYNC_KEY;
+// Same name as in the Rails API; INTERNAL_SYNC_KEY is the old name, still read for existing deployments
+const LTI_INTERNAL_SYNC_KEY: string | undefined =
+  process.env.LTI_INTERNAL_SYNC_KEY || process.env.INTERNAL_SYNC_KEY;
 
 const LTI_RATE_LIMIT_WINDOW_MS = Number(process.env.LTI_RATE_LIMIT_WINDOW_MS ?? 60_000);
 const LTI_LAUNCH_RATE_LIMIT_MAX = Number(process.env.LTI_LAUNCH_RATE_LIMIT_MAX ?? 20);
@@ -81,7 +83,7 @@ export const Config = {
 
   LTI_KEY,
   LTI_SHARED_API_SECRET,
-  INTERNAL_SYNC_KEY,
+  LTI_INTERNAL_SYNC_KEY,
   LTI_RATE_LIMIT_WINDOW_MS,
   LTI_LAUNCH_RATE_LIMIT_MAX,
   LTI_API_RATE_LIMIT_MAX,

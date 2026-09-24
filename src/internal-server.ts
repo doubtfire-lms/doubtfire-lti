@@ -15,5 +15,10 @@ export function startInternalServer(): void {
 
   app.listen(Config.INTERNAL_PORT, () => {
     console.log(`Running internal LTI API on port ${Config.INTERNAL_PORT}`);
+    if (!Config.LTI_INTERNAL_SYNC_KEY) {
+      console.warn(
+        'LTI_INTERNAL_SYNC_KEY is not set, so the internal API refuses every request and the OnTrack LMS tab and scheduled LMS sync will not work. Set it to the same value as in the Rails API.',
+      );
+    }
   });
 }
