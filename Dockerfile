@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+RUN npm run build
 
 # 3001: public LTI API (LMS launches, browser). 3003: internal API called by OnTrack's Rails API
 EXPOSE 3001 3003
