@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.3](///compare/v3.0.2...v3.0.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* compile typescript during image build instead of container startup 935a0a3
+
 ### [3.0.2](///compare/v3.0.1...v3.0.2) (2026-10-20)
 
 ### [3.0.1](///compare/v3.0.0...v3.0.1) (2026-09-24)
