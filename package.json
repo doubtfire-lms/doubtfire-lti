@@ -1,6 +1,6 @@
 {
   "name": "doubtfire-lti",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "",
   "license": "ISC",
   "author": "doubtfire-lms",
@@ -9,6 +9,7 @@
     "dev": "ts-node-dev src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:local": "fnm exec --using=24 node --use-system-ca dist/index.js",
     "format": "prettier --write .",
     "lint": "eslint --cache src",
     "test": "echo \"Error: no test specified\" && exit 1"
