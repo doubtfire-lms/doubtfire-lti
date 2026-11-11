@@ -20,7 +20,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "jsonwebtoken": "^9.0.2",
-    "ltijs": "^7.0.5",
+    "ltijs": "^7.0.7",
     "mongoose": "^8.24.8",
     "ts-node-dev": "^2.0.0"
   },
