@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.5](///compare/v3.0.4...v3.0.5) (2026-11-11)
+
+
+### Bug Fixes
+
+* redirect failed session handoffs to a token-free URL 7da4eeb
+
 ### [3.0.4](///compare/v3.0.3...v3.0.4) (2026-10-22)
 
 ### [3.0.3](///compare/v3.0.2...v3.0.3) (2026-10-20)
