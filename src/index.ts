@@ -221,18 +221,22 @@ lti.onResourceLink(async (launchContext, _request, response) => {
 });
 
 ltiHttpHandler.app.get('/lti/api/session', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const errorUrl = new URL('/lti', Config.APP_HOST);
+  errorUrl.searchParams.set('launchError', 'invalid_session');
+
   const ltik = req.query.ltik;
   const authToken = req.query.authToken;
   const username = req.query.username;
 
   if (typeof ltik !== 'string' || typeof authToken !== 'string' || typeof username !== 'string') {
-    return sendError(res, 'Invalid LTI session handoff', 400);
+    return res.redirect(errorUrl.toString());
   }
 
   try {
     await lti.getLaunchContext(ltik);
   } catch {
-    return sendError(res, 'Invalid or expired LTI session', 401);
+    return res.redirect(errorUrl.toString());
   }
 
   if (ltiSessionCookieOptions.partitioned) {
